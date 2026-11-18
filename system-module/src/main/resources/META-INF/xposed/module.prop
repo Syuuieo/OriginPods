@@ -1,0 +1,9 @@
+id=com.originpods.app
+name=OriginPods
+version=v0.1.0
+versionCode=100
+author=OriginPods
+description=Integrate OPPO/OnePlus TWS earbuds into OriginOS ConnectCenter and pop-up UI.
+minApiVersion=101
+targetApiVersion=101
+staticScope=true

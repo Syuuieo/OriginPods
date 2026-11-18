@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">OriginPods</string>
+    <string name="module_description">OriginOS 蓝牙耳机系统集成模块（支持 OPPO / OnePlus 等 TWS 耳机）</string>
+</resources>
