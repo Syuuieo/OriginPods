@@ -77,15 +77,9 @@ class ConnectCenterHook(
     }
 
     private fun hookControlParse() {
-        val controlDeviceInfoClass = runCatching {
-            classLoader.loadClass("com.vivo.connectcenter.common.bean.ControlDeviceInfo")
-        }.getOrNull() ?: return
-
-        val twsParseClass = runCatching {
-            classLoader.loadClass("s3.y")
-        }.getOrNull() ?: return
-
         runCatching {
+            val controlDeviceInfoClass = classLoader.loadClass("com.vivo.connectcenter.common.bean.ControlDeviceInfo")
+            val twsParseClass = classLoader.loadClass("s3.y")
             val tMethod = twsParseClass.getDeclaredMethod("t", controlDeviceInfoClass)
             module.hook(tMethod).intercept { chain ->
                 val result = chain.proceed()
@@ -99,91 +93,172 @@ class ConnectCenterHook(
         }
 
         // Fix/inject OptionControl SoundItems for twsconn_noice_reduction
+        // OriginOS 7: DOConverter (utils.i).p ; OriginOS 6 (1.5.4.0): DOConverter (utils.i).n
         runCatching {
             val utilsClass = classLoader.loadClass("com.vivo.connect.center.utils.i")
             val optionControlClass = classLoader.loadClass("com.vivo.connect.center.model.OptionControl")
             val baseDeviceClass = classLoader.loadClass("com.vivo.connectcenter.common.bean.BaseDevice")
             val soundItemClass = classLoader.loadClass("com.vivo.connect.center.model.SoundItem")
-            val pMethod = utilsClass.getDeclaredMethod(
-                "p",
-                optionControlClass,
-                baseDeviceClass,
-                String::class.java,
-            )
-            module.hook(pMethod).intercept { chain ->
-                val result = chain.proceed()
-                val optionControl = chain.args.getOrNull(0) ?: return@intercept result
-                val baseDevice = chain.args.getOrNull(1) ?: return@intercept result
-                val serviceId = chain.args.getOrNull(2) as? String ?: return@intercept result
-                if (serviceId == OriginConnectCenterBridge.SERVICE_NOISE_CONTROL) {
-                    val currentName = runCatching {
-                        optionControlClass.getMethod("getName").invoke(optionControl) as? String
-                    }.getOrNull()
-                    if (currentName.isNullOrEmpty()) {
-                        optionControlClass.getMethod("setName", String::class.java).invoke(optionControl, "降噪控制")
-                    }
-                    @Suppress("UNCHECKED_CAST")
-                    val existing = optionControlClass.getMethod("getListSounds").invoke(optionControl) as? List<Any>
-                    val devId = baseDeviceClass.getMethod("getId").invoke(baseDevice) as? String
-                    val podState = devId?.let { cachedStates[it] }
-                    if (existing.isNullOrEmpty()) {
-                        if (podState != null) {
-                            val soundCtor = soundItemClass.getDeclaredConstructor(
-                                String::class.java,
-                                Boolean::class.javaPrimitiveType,
-                                String::class.java,
-                                Int::class.javaPrimitiveType,
-                                Int::class.javaPrimitiveType,
-                            )
-                            val currentOpt = when (podState.noiseMode) {
-                                NoiseMode.ANC, NoiseMode.ANC_DEEP, NoiseMode.ANC_MEDIUM, NoiseMode.ANC_LIGHT, NoiseMode.WIND -> "key_noice_reduction"
-                                NoiseMode.ANC_ADAPTIVE -> "key_auto"
-                                NoiseMode.TRANSPARENCY -> "key_transparent"
-                                NoiseMode.OFF, null -> "key_close"
-                            }
-                            val items = arrayListOf(
-                                "key_noice_reduction",
-                                "key_auto",
-                                "key_transparent",
-                                "key_close",
-                            ).mapNotNull { key ->
-                                noiseIconAndLabel(key)?.let { (icon, label) ->
-                                    soundCtor.newInstance(key, currentOpt == key, label, icon, icon)
-                                }
-                            }
-                            optionControlClass.getMethod("setListSounds", List::class.java).invoke(optionControl, items)
-                            module.log(Log.INFO, TAG, "injected OptionControl SoundItems for $devId")
-                        }
-                    } else {
-                        existing.forEach { item -> fillSoundItemIfMissing(soundItemClass, item) }
-                    }
+            for (methodName in listOf("p", "n")) {
+                val method = runCatching {
+                    utilsClass.getDeclaredMethod(
+                        methodName,
+                        optionControlClass,
+                        baseDeviceClass,
+                        String::class.java,
+                    )
+                }.getOrNull() ?: continue
+                module.hook(method).intercept { chain ->
+                    val result = chain.proceed()
+                    val optionControl = chain.args.getOrNull(0) ?: return@intercept result
+                    val baseDevice = chain.args.getOrNull(1) ?: return@intercept result
+                    val serviceId = chain.args.getOrNull(2) as? String ?: return@intercept result
+                    handleOptionControlConvert(
+                        optionControlClass,
+                        baseDeviceClass,
+                        soundItemClass,
+                        optionControl,
+                        baseDevice,
+                        serviceId,
+                    )
+                    result
                 }
-                result
+                module.log(Log.INFO, TAG, "hooked DOConverter.$methodName")
             }
-            module.log(Log.INFO, TAG, "hooked DOConverter.p")
         }
 
-        // Also ensure OptionControlManager (s0) keeps icon & text across updates (b / e / a.b)
-        runCatching {
-            val s0Class = classLoader.loadClass("com.vivo.connect.center.control.s0")
-            val holderClass = classLoader.loadClass("com.vivo.connect.center.control.s0\$a")
-            val optionControlClass = classLoader.loadClass("com.vivo.connect.center.model.OptionControl")
-            val soundItemClass = classLoader.loadClass("com.vivo.connect.center.model.SoundItem")
-
-            val bHolderMethod = holderClass.getDeclaredMethod(
-                "b",
-                soundItemClass,
-                Boolean::class.javaPrimitiveType,
-            ).apply { isAccessible = true }
-            module.hook(bHolderMethod).intercept { chain ->
-                val soundItem = chain.args.getOrNull(0)
-                if (soundItem != null) {
-                    fillSoundItemIfMissing(soundItemClass, soundItem)
-                }
-                chain.proceed()
+        // Also ensure OptionControlManager keeps icon & text across updates:
+        // OriginOS 7: com.vivo.connect.center.control.s0 (b, e(String, OptionControl), s0$a.b)
+        // OriginOS 6 (1.5.4.0): i1.o0 (b, e(String, OptionControl, boolean), o0$a.b)
+        val optionControlClass = runCatching {
+            classLoader.loadClass("com.vivo.connect.center.model.OptionControl")
+        }.getOrNull()
+        val soundItemClass = runCatching {
+            classLoader.loadClass("com.vivo.connect.center.model.SoundItem")
+        }.getOrNull()
+        if (optionControlClass != null && soundItemClass != null) {
+            for (mgrName in listOf("com.vivo.connect.center.control.s0", "i1.o0")) {
+                hookOptionControlManager(mgrName, optionControlClass, soundItemClass)
             }
+        }
 
-            val bManagerMethod = s0Class.getDeclaredMethod("b", ArrayList::class.java)
+        // Intercept vdfs_find_earphone / twsconn_find_earphone in DeviceControlManager
+        // OriginOS 7: com.vivo.connect.center.control.u.h ; OriginOS 6 (1.5.4.0): i1.l.g
+        val cbClass = runCatching {
+            classLoader.loadClass("com.vivo.cowork.callback.IResultCallback")
+        }.getOrNull()
+        if (cbClass != null) {
+            val dispatchTargets = listOf(
+                "com.vivo.connect.center.control.u" to "h",
+                "i1.l" to "g",
+            )
+            for ((clsName, methodName) in dispatchTargets) {
+                runCatching {
+                    val targetClass = classLoader.loadClass(clsName)
+                    val dispatchMethod = targetClass.getDeclaredMethod(methodName, String::class.java, cbClass)
+                        .apply { isAccessible = true }
+                    module.hook(dispatchMethod).intercept { chain ->
+                        val json = chain.args.getOrNull(0) as? String
+                        val cb = chain.args.getOrNull(1)
+                        if (json != null && handleFindEarphoneDispatch(json)) {
+                            runCatching {
+                                cb?.javaClass?.getMethod("onResult", Int::class.javaPrimitiveType, String::class.java)
+                                    ?.invoke(cb, 0, "success")
+                            }
+                            return@intercept null
+                        }
+                        chain.proceed()
+                    }
+                    module.log(Log.INFO, TAG, "hooked $clsName.$methodName for find_earphone")
+                }
+            }
+        }
+    }
+
+    private fun handleOptionControlConvert(
+        optionControlClass: Class<*>,
+        baseDeviceClass: Class<*>,
+        soundItemClass: Class<*>,
+        optionControl: Any,
+        baseDevice: Any,
+        serviceId: String,
+    ) {
+        if (serviceId != OriginConnectCenterBridge.SERVICE_NOISE_CONTROL) return
+        val currentName = runCatching {
+            optionControlClass.getMethod("getName").invoke(optionControl) as? String
+        }.getOrNull()
+        if (currentName.isNullOrEmpty()) {
+            optionControlClass.getMethod("setName", String::class.java).invoke(optionControl, "降噪控制")
+        }
+        @Suppress("UNCHECKED_CAST")
+        val existing = optionControlClass.getMethod("getListSounds").invoke(optionControl) as? List<Any>
+        val devId = runCatching { baseDeviceClass.getMethod("getId").invoke(baseDevice) as? String }.getOrNull()
+        val podState = devId?.let { cachedStates[it] }
+        if (existing.isNullOrEmpty()) {
+            if (podState != null) {
+                val soundCtor = soundItemClass.getDeclaredConstructor(
+                    String::class.java,
+                    Boolean::class.javaPrimitiveType,
+                    String::class.java,
+                    Int::class.javaPrimitiveType,
+                    Int::class.javaPrimitiveType,
+                )
+                val currentOpt = when (podState.noiseMode) {
+                    NoiseMode.ANC, NoiseMode.ANC_DEEP, NoiseMode.ANC_MEDIUM, NoiseMode.ANC_LIGHT, NoiseMode.WIND -> "key_noice_reduction"
+                    NoiseMode.ANC_ADAPTIVE -> "key_auto"
+                    NoiseMode.TRANSPARENCY -> "key_transparent"
+                    NoiseMode.OFF, null -> "key_close"
+                }
+                val items = arrayListOf(
+                    "key_noice_reduction",
+                    "key_auto",
+                    "key_transparent",
+                    "key_close",
+                ).mapNotNull { key ->
+                    noiseIconAndLabel(key)?.let { (icon, label) ->
+                        soundCtor.newInstance(key, currentOpt == key, label, icon, icon)
+                    }
+                }
+                optionControlClass.getMethod("setListSounds", List::class.java).invoke(optionControl, items)
+                module.log(Log.INFO, TAG, "injected OptionControl SoundItems for $devId")
+            }
+        } else {
+            existing.forEach { item -> fillSoundItemIfMissing(soundItemClass, item) }
+        }
+    }
+
+    private fun hookOptionControlManager(
+        mgrClassName: String,
+        optionControlClass: Class<*>,
+        soundItemClass: Class<*>,
+    ) {
+        val mgrClass = runCatching { classLoader.loadClass(mgrClassName) }.getOrNull() ?: return
+        val holderClass = runCatching { classLoader.loadClass("$mgrClassName\$a") }.getOrNull()
+
+        if (holderClass != null) {
+            runCatching {
+                val bHolderMethod = holderClass.getDeclaredMethod(
+                    "b",
+                    soundItemClass,
+                    Boolean::class.javaPrimitiveType,
+                ).apply { isAccessible = true }
+                module.hook(bHolderMethod).intercept { chain ->
+                    val soundItem = chain.args.getOrNull(0)
+                    if (soundItem != null) {
+                        fillSoundItemIfMissing(soundItemClass, soundItem)
+                    }
+                    val result = chain.proceed()
+                    val holder = chain.thisObject
+                    if (holder != null && soundItem != null) {
+                        ensureHolderImageDrawable(holder, holderClass, soundItemClass, soundItem)
+                    }
+                    result
+                }
+            }
+        }
+
+        runCatching {
+            val bManagerMethod = mgrClass.getDeclaredMethod("b", ArrayList::class.java)
                 .apply { isAccessible = true }
             module.hook(bManagerMethod).intercept { chain ->
                 val list = chain.args.getOrNull(0) as? List<*>
@@ -192,57 +267,74 @@ class ConnectCenterHook(
                 }
                 chain.proceed()
             }
-
-            val eManagerMethod = s0Class.getDeclaredMethod("e", String::class.java, optionControlClass)
-                .apply { isAccessible = true }
-            module.hook(eManagerMethod).intercept { chain ->
-                val optionControl = chain.args.getOrNull(1)
-                if (optionControl != null) {
-                    val items = optionControlClass.getMethod("getListSounds").invoke(optionControl) as? List<*>
-                    val hasNoiseKey = items?.any { item ->
-                        val key = runCatching {
-                            soundItemClass.getMethod("getSoundKey").invoke(item) as? String
-                        }.getOrNull()
-                        key == "key_noice_reduction" || key == "key_auto" || key == "key_transparent"
-                    } == true
-                    if (hasNoiseKey) {
-                        val name = runCatching {
-                            optionControlClass.getMethod("getName").invoke(optionControl) as? String
-                        }.getOrNull()
-                        if (name.isNullOrEmpty()) {
-                            optionControlClass.getMethod("setName", String::class.java).invoke(optionControl, "降噪控制")
-                        }
-                        items?.forEach { item ->
-                            if (item != null) fillSoundItemIfMissing(soundItemClass, item)
-                        }
-                    }
-                }
-                chain.proceed()
-            }
-
-            module.log(Log.INFO, TAG, "hooked OptionControlManager (s0.b, s0.e, s0\$a.b)")
         }
 
-        // Intercept vdfs_find_earphone / twsconn_find_earphone in DeviceControlManager (u.h)
-        // because ConnectCenter normally routes vdfs_find_earphone to com.vivo.findphone instead of Bluetooth.
-        runCatching {
-            val uClass = classLoader.loadClass("com.vivo.connect.center.control.u")
-            val cbClass = classLoader.loadClass("com.vivo.cowork.callback.IResultCallback")
-            val hMethod = uClass.getDeclaredMethod("h", String::class.java, cbClass)
-                .apply { isAccessible = true }
-            module.hook(hMethod).intercept { chain ->
-                val json = chain.args.getOrNull(0) as? String
-                val cb = chain.args.getOrNull(1)
-                if (json != null && handleFindEarphoneDispatch(json)) {
-                    runCatching {
-                        cb?.javaClass?.getMethod("onResult", Int::class.javaPrimitiveType, String::class.java)
-                            ?.invoke(cb, 0, "success")
+        val eHooked = listOf(
+            arrayOf<Class<*>>(String::class.java, optionControlClass),
+            arrayOf<Class<*>>(String::class.java, optionControlClass, Boolean::class.javaPrimitiveType!!),
+        ).any { paramTypes ->
+            runCatching {
+                val eMethod = mgrClass.getDeclaredMethod("e", *paramTypes).apply { isAccessible = true }
+                module.hook(eMethod).intercept { chain ->
+                    val optionControl = chain.args.getOrNull(1)
+                    if (optionControl != null) {
+                        fillOptionControlIfNoise(optionControlClass, soundItemClass, optionControl)
                     }
-                    return@intercept null
+                    chain.proceed()
                 }
-                chain.proceed()
+                true
+            }.getOrDefault(false)
+        }
+
+        module.log(Log.INFO, TAG, "hooked OptionControlManager $mgrClassName (e=$eHooked)")
+    }
+
+    private fun fillOptionControlIfNoise(
+        optionControlClass: Class<*>,
+        soundItemClass: Class<*>,
+        optionControl: Any,
+    ) {
+        val items = runCatching {
+            optionControlClass.getMethod("getListSounds").invoke(optionControl) as? List<*>
+        }.getOrNull() ?: return
+        val hasNoiseKey = items.any { item ->
+            val key = runCatching {
+                soundItemClass.getMethod("getSoundKey").invoke(item) as? String
+            }.getOrNull()
+            key == "key_noice_reduction" || key == "key_auto" || key == "key_transparent"
+        }
+        if (hasNoiseKey) {
+            val name = runCatching {
+                optionControlClass.getMethod("getName").invoke(optionControl) as? String
+            }.getOrNull()
+            if (name.isNullOrEmpty()) {
+                optionControlClass.getMethod("setName", String::class.java).invoke(optionControl, "降噪控制")
             }
-            module.log(Log.INFO, TAG, "hooked DeviceControlManager.h for find_earphone")
+            items.forEach { item ->
+                if (item != null) fillSoundItemIfMissing(soundItemClass, item)
+            }
+        }
+    }
+
+    private fun ensureHolderImageDrawable(
+        holder: Any,
+        holderClass: Class<*>,
+        soundItemClass: Class<*>,
+        soundItem: Any,
+    ) {
+        runCatching {
+            val imageView = holderClass.declaredFields
+                .firstOrNull { android.widget.ImageView::class.java.isAssignableFrom(it.type) }
+                ?.apply { isAccessible = true }
+                ?.get(holder) as? android.widget.ImageView
+                ?: return
+            if (imageView.drawable != null) return
+
+            val key = soundItemClass.getMethod("getSoundKey").invoke(soundItem) as? String ?: return
+            val imgNormal = soundItemClass.getMethod("getImgNormal").invoke(soundItem) as? Int ?: 0
+            val ctx = imageView.context ?: contextRef ?: return
+            val drawable = resolveNoiseDrawable(ctx, key, imgNormal) ?: return
+            imageView.setImageDrawable(drawable)
         }
     }
 
@@ -284,8 +376,14 @@ class ConnectCenterHook(
         }.getOrNull()?.also { contextRef = it }
         val res = appCtx?.resources
         val pkg = "com.vivo.connbase.connectcenter"
-        fun iconId(name: String, fallback: Int): Int =
-            res?.getIdentifier(name, "drawable", pkg)?.takeIf { it != 0 } ?: fallback
+        val twsPkg = "com.android.vivo.tws.vivotws"
+        val twsRes = runCatching { appCtx?.packageManager?.getResourcesForApplication(twsPkg) }.getOrNull()
+        fun iconId(name: String, fallback: Int): Int {
+            val ccId = res?.getIdentifier(name, "drawable", pkg)?.takeIf { it != 0 }
+            if (ccId != null) return ccId
+            val twsId = twsRes?.getIdentifier(name, "drawable", twsPkg)?.takeIf { it != 0 }
+            return twsId ?: fallback
+        }
 
         return when (key) {
             "key_noice_reduction" -> iconId("ic_noise_reduction", 0x7f080217) to "降噪"
@@ -293,6 +391,85 @@ class ConnectCenterHook(
             "key_transparent" -> iconId("ic_noise_trans", 0x7f080218) to "通透"
             "key_close" -> iconId("ic_noise_close", 0x7f080216) to "关闭"
             else -> null
+        }
+    }
+
+    private fun resolveNoiseDrawable(ctx: Context, key: String, imgNormal: Int): android.graphics.drawable.Drawable? {
+        val resName = when (key) {
+            "key_noice_reduction" -> "ic_noise_reduction"
+            "key_auto" -> "icon_noise_adaptive"
+            "key_transparent" -> "ic_noise_trans"
+            "key_close" -> "ic_noise_close"
+            else -> return null
+        }
+        val ccId = ctx.resources.getIdentifier(resName, "drawable", "com.vivo.connbase.connectcenter")
+        if (ccId != 0) {
+            runCatching { ctx.getDrawable(ccId) }.getOrNull()?.let { return it }
+        }
+        val twsPkg = "com.android.vivo.tws.vivotws"
+        val twsRes = runCatching { ctx.packageManager.getResourcesForApplication(twsPkg) }.getOrNull()
+        if (twsRes != null) {
+            val twsId = twsRes.getIdentifier(resName, "drawable", twsPkg)
+            if (twsId != 0) {
+                runCatching { twsRes.getDrawable(twsId, null) }.getOrNull()?.let { return it }
+            }
+            if (imgNormal > 0) {
+                runCatching { twsRes.getDrawable(imgNormal, null) }.getOrNull()?.let { return it }
+            }
+        }
+        return createFallbackNoiseDrawable(key, ctx.resources.displayMetrics.density)
+    }
+
+    private fun createFallbackNoiseDrawable(key: String, density: Float): android.graphics.drawable.Drawable {
+        return object : android.graphics.drawable.Drawable() {
+            private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                color = android.graphics.Color.WHITE
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = 1.8f * density
+                strokeCap = android.graphics.Paint.Cap.ROUND
+            }
+
+            override fun draw(canvas: android.graphics.Canvas) {
+                val b = bounds
+                if (b.isEmpty) return
+                val cx = b.exactCenterX()
+                val cy = b.exactCenterY()
+                val r = minOf(b.width(), b.height()) * 0.34f
+                paint.style = android.graphics.Paint.Style.STROKE
+                canvas.drawCircle(cx, cy, r, paint)
+                when (key) {
+                    "key_noice_reduction" -> {
+                        paint.style = android.graphics.Paint.Style.FILL
+                        canvas.drawCircle(cx, cy, r * 0.42f, paint)
+                    }
+                    "key_auto" -> {
+                        paint.style = android.graphics.Paint.Style.STROKE
+                        canvas.drawArc(
+                            cx - r * 0.52f, cy - r * 0.52f, cx + r * 0.52f, cy + r * 0.52f,
+                            -45f, 180f, false, paint,
+                        )
+                    }
+                    "key_transparent" -> {
+                        paint.style = android.graphics.Paint.Style.STROKE
+                        canvas.drawCircle(cx, cy, r * 0.45f, paint)
+                    }
+                    "key_close" -> {
+                        val d = r * 0.68f
+                        canvas.drawLine(cx - d, cy - d, cx + d, cy + d, paint)
+                    }
+                }
+            }
+
+            override fun setAlpha(alpha: Int) {
+                paint.alpha = alpha
+            }
+
+            override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {
+                paint.colorFilter = colorFilter
+            }
+
+            @Deprecated("Deprecated in Java")
+            override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
         }
     }
 
