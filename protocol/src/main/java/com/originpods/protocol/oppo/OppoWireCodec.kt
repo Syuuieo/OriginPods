@@ -7,6 +7,8 @@ package com.originpods.protocol.oppo
  * `AA | TotalLen | 00 00 | Command(2) | Sequence | PayloadLen(2) | Payload`
  */
 object OppoWireCodec {
+    const val QUERY_PRODUCT_ID = 0x0103
+    const val PRODUCT_ID_RESPONSE = 0x8103
     const val QUERY_FIRMWARE = 0x0105
     const val FIRMWARE_RESPONSE = 0x8105
     const val QUERY_BATTERY = 0x0106
@@ -54,6 +56,7 @@ object OppoWireCodec {
         val secondary: Int?,
     )
 
+    val queryProductId: ByteArray = packet(QUERY_PRODUCT_ID)
     val queryFirmware: ByteArray = packet(QUERY_FIRMWARE)
     val queryBattery: ByteArray = packet(QUERY_BATTERY)
     val queryNotificationSupport: ByteArray = packet(QUERY_NOTIFICATION_SUPPORT)
@@ -80,6 +83,16 @@ object OppoWireCodec {
 
     fun setEqPreset(presetId: Int): ByteArray =
         packet(SET_EQ, payload = byteArrayOf(presetId.toByte()))
+
+    fun setAncByIndex(protocolIndex: Int): ByteArray {
+        require(protocolIndex in 0..63)
+        val byteCount = protocolIndex / 8 + 1
+        val payload = ByteArray(2 + byteCount)
+        payload[0] = 0x01
+        payload[1] = 0x01
+        payload[2 + protocolIndex / 8] = (1 shl (protocolIndex % 8)).toByte()
+        return packet(SET_ANC, payload = payload)
+    }
 
     fun setAnc(primary: Int, secondary: Int? = null): ByteArray {
         require(primary in 0..0xFF)
@@ -146,6 +159,41 @@ object OppoWireCodec {
         }
         return BatteryState(left = left, right = right, case = case)
             .takeIf { it.left != null || it.right != null || it.case != null }
+    }
+
+    fun parseProductId(frame: Frame): String? {
+        if (frame.command != PRODUCT_ID_RESPONSE || frame.payload.size != 4) return null
+        if (frame.payload[0].unsigned() != STATUS_SUCCESS) return null
+        val id = frame.payload[1].unsigned() or
+            (frame.payload[2].unsigned() shl 8) or
+            (frame.payload[3].unsigned() shl 16)
+        return "%06X".format(id)
+    }
+
+    fun parseAncBitIndex(frame: Frame): Int? {
+        if (frame.command != ANC_RESPONSE && frame.command != ACTIVE_REPORT) return null
+        if (
+            frame.command == ACTIVE_REPORT &&
+            frame.payload.firstOrNull()?.unsigned() in setOf(REPORT_BATTERY, REPORT_WEAR)
+        ) {
+            return null
+        }
+        val payload = frame.payload
+        for (offset in 0 until payload.size - 2) {
+            if (payload[offset].unsigned() != 0x01 ||
+                payload[offset + 1].unsigned() != 0x01
+            ) {
+                continue
+            }
+            for (byteIdx in offset + 2 until payload.size) {
+                val b = payload[byteIdx].unsigned()
+                if (b != 0) {
+                    val bitOffset = Integer.numberOfTrailingZeros(b)
+                    return (byteIdx - (offset + 2)) * 8 + bitOffset
+                }
+            }
+        }
+        return null
     }
 
     fun parseAncState(frame: Frame): AncState? {

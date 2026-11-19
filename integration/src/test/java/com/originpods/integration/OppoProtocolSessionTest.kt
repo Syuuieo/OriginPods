@@ -39,4 +39,31 @@ class OppoProtocolSessionTest {
         assertEquals(70, batteryState.battery.left.percent)
         assertTrue(!batteryState.battery.right.available)
     }
+
+    @Test
+    fun `loads bundled oppo family whitelist and resolves dynamic anc by product id`() {
+        assertTrue(OppoModelCatalog.allModels().size > 50)
+        assertEquals("OPPO Enco Air5s（星光版）", OppoModelCatalog.byDeviceName("OPPO Enco Laplace 3")?.name)
+        assertEquals(
+            OppoEarbudAdapter.ID,
+            EarbudAdapterRegistry.resolve(EarbudIdentity("00:11:22:33:44:55", "realme Buds Air8"))?.id,
+        )
+        assertEquals(
+            OnePlusEarbudAdapter.ID,
+            EarbudAdapterRegistry.resolve(EarbudIdentity("00:11:22:33:44:55", "OnePlus Nord Buds 4"))?.id,
+        )
+
+        val session = OppoEarbudAdapter().createProtocolSession()
+        // Simulate 0x8103 productId = 0x067410 -> little-endian bytes: 0x00, 0x10, 0x74, 0x06
+        val productRsp = OppoWireCodec.packet(
+            command = OppoWireCodec.PRODUCT_ID_RESPONSE,
+            payload = byteArrayOf(0x00, 0x10, 0x74, 0x06),
+        )
+        val events = session.offer(productRsp)
+        assertTrue(events.any { it is ProtocolEvent.HandshakeAccepted })
+
+        val encAnc = session.encode(ControlRequest.SetNoiseMode(NoiseMode.ANC)).single()
+        val ancFrame = OppoWireCodec.Decoder().offer(encAnc).single()
+        assertEquals(OppoWireCodec.SET_ANC, ancFrame.command)
+    }
 }

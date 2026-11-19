@@ -31,6 +31,8 @@ class VivoTwsHook(
     private var appContext: Context? = null
     @Volatile
     private var capturedModel: Int = 0
+    @Volatile
+    private var activePresenterRef: java.lang.ref.WeakReference<Any>? = null
 
     override fun install() {
         Handler(Looper.getMainLooper()).postDelayed({
@@ -123,6 +125,7 @@ class VivoTwsHook(
             val configBeanClass = classLoader.loadClass("com.vivo.commonbase.bean.TwsConfig\$TwsConfigBean")
             val b0Method = zClass.getDeclaredMethod("b0", configBeanClass)
             module.hook(b0Method).intercept { chain ->
+                chain.thisObject?.let { activePresenterRef = java.lang.ref.WeakReference(it) }
                 val cfg = chain.args.getOrNull(0)
                 if (cfg != null) {
                     runCatching {
@@ -212,18 +215,7 @@ class VivoTwsHook(
 
     private fun handleVipcCommand(cmd: String, mac: String, param: String, state: RemotePodState): String? {
         return when (cmd) {
-            "get_earbud_status" -> {
-                val model = resolveVivoModelId()
-                org.json.JSONObject().apply {
-                    put("left_battery", state.left.coerceAtLeast(0))
-                    put("right_battery", state.right.coerceAtLeast(0))
-                    put("box_battery", state.box.coerceAtLeast(0))
-                    put("charge_state", state.chargingState)
-                    put("ear_state", 0x0C)
-                    put("is_info_from_earbud", true)
-                    put("attr", org.json.JSONObject().put("model", model))
-                }.toString()
-            }
+            "get_earbud_status" -> buildEarbudStatusJson(state)
             "get_settings" -> {
                 val model = resolveVivoModelId()
                 val (noiseMode, reduceModel) = when (state.noiseMode) {
@@ -513,6 +505,9 @@ class VivoTwsHook(
                         )
                         cachedStates[mac] = next
                         OriginConnectCenterBridge.pushState(mac, next)
+                        if (next.left >= 0 || next.right >= 0 || next.box >= 0) {
+                            pushBatteryToActivePresenter(mac, next)
+                        }
                         module.log(Log.INFO, TAG, "updated state in VivoTws mac=$mac L=${next.left} R=${next.right}")
                     }
                 },
@@ -524,6 +519,43 @@ class VivoTwsHook(
                     putExtra("request_state", true)
                 },
             )
+        }
+    }
+
+    private fun buildEarbudStatusJson(state: RemotePodState): String {
+        val model = resolveVivoModelId()
+        return org.json.JSONObject().apply {
+            put("left_battery", state.left)
+            put("right_battery", state.right)
+            put("box_battery", state.box)
+            put("charge_state", state.chargingState)
+            put("ear_state", 0x0C)
+            put("is_info_from_earbud", true)
+            put("attr", org.json.JSONObject().put("model", model))
+        }.toString()
+    }
+
+    private fun pushBatteryToActivePresenter(mac: String, state: RemotePodState) {
+        val presenter = activePresenterRef?.get() ?: return
+        Handler(Looper.getMainLooper()).post {
+            runCatching {
+                val bean = presenter.javaClass.getMethod("E").invoke(presenter) ?: return@post
+                val device = bean.javaClass.getMethod("getDevice").invoke(bean) as? BluetoothDevice ?: return@post
+                if (!device.address.equals(mac, ignoreCase = true)) return@post
+                val yMethod = presenter.javaClass.declaredMethods.firstOrNull {
+                    it.name == "Y" && it.parameterCount == 1
+                } ?: return@post
+                val statusClass = yMethod.parameterTypes[0]
+                val gsonClass = classLoader.loadClass("com.google.gson.Gson")
+                val gson = gsonClass.getDeclaredConstructor().newInstance()
+                val statusObj = gsonClass.getMethod("fromJson", String::class.java, Class::class.java)
+                    .invoke(gson, buildEarbudStatusJson(state), statusClass) ?: return@post
+                yMethod.isAccessible = true
+                yMethod.invoke(presenter, statusObj)
+                module.log(Log.INFO, TAG, "pushed battery to HomePresenter mac=$mac L=${state.left} R=${state.right} B=${state.box}")
+            }.onFailure {
+                module.log(Log.WARN, TAG, "pushBatteryToActivePresenter failed", it)
+            }
         }
     }
 

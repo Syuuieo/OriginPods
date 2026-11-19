@@ -5,9 +5,16 @@ open class OnePlusEarbudAdapter : OpoProtocolAdapter() {
     override val displayName: String = "OnePlus Buds / Buds Pro"
     override val resolution: AdapterResolution = AdapterResolution.FAMILY_MATCH
 
-    override fun matches(identity: EarbudIdentity): Boolean =
-        identity.standardHeadset && !identity.nativeSystemEarbud &&
-            FAMILY_NAME.matches(normalizeDeviceName(identity.deviceName.orEmpty()))
+    override fun matches(identity: EarbudIdentity): Boolean {
+        if (!identity.standardHeadset || identity.nativeSystemEarbud) return false
+        val raw = identity.deviceName.orEmpty()
+        val norm = normalizeDeviceName(raw)
+        if (FAMILY_NAME.matches(norm) || norm.contains("oneplus") || norm.contains("一加")) {
+            return true
+        }
+        val catalogHit = OppoModelCatalog.byDeviceName(raw) ?: return false
+        return catalogHit.brand.equals("OnePlus", ignoreCase = true)
+    }
 
     companion object {
         const val ID = "oneplus-buds-opo-family"

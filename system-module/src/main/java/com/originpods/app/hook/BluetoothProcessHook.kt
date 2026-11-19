@@ -278,6 +278,9 @@ class BluetoothProcessHook(
             object : BroadcastReceiver() {
                 override fun onReceive(ctx: Context, intent: Intent) {
                     if (intent.getBooleanExtra("request_state", false)) {
+                        if (OriginDeviceSessionManager.activeDevices.value.isEmpty()) {
+                            scanConnectedA2dp(ctx)
+                        }
                         OriginDeviceSessionManager.activeDevices.value.forEach { (devMac, devState) ->
                             broadcastState(ctx, devMac, devState)
                         }

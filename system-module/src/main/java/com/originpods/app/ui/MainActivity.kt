@@ -10,8 +10,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -61,28 +63,42 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.originpods.app.BuildConfig
 import com.originpods.app.hook.OriginPodsXposedEntry
-import com.originpods.app.runtime.ActiveDeviceSessionState
 import com.originpods.app.runtime.OriginDeviceSessionManager
 import com.originpods.integration.BatteryFeatureState
 import com.originpods.integration.EarbudAdapterRegistry
 import com.originpods.integration.FirmwareFeatureState
 import com.originpods.integration.NoiseMode
 import com.originpods.integration.NoiseModeFeatureState
+import com.originpods.integration.OppoModelCatalog
+import com.originpods.integration.OppoModelSpec
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Check
+import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Home
 import top.yukonga.miuix.kmp.icon.extended.Info
+import top.yukonga.miuix.kmp.icon.extended.Search
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
@@ -90,6 +106,7 @@ import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
+import top.yukonga.miuix.kmp.window.WindowDialog
 
 data class RemoteTelemetryUi(
     val mac: String,
@@ -207,7 +224,6 @@ class MainActivity : ComponentActivity() {
 private enum class TopDestination(val label: String) {
     DASHBOARD("主页"),
     SETTINGS("设置"),
-    ABOUT("关于"),
 }
 
 @Composable
@@ -215,6 +231,12 @@ private fun OriginPodsApp(
     remoteStates: Map<String, RemoteTelemetryUi>,
     onRefreshRequested: () -> Unit,
 ) {
+    var showSupportedDevices by remember { mutableStateOf(false) }
+    if (showSupportedDevices) {
+        SupportedDevicesScreen(onBack = { showSupportedDevices = false })
+        return
+    }
+
     val pagerState = rememberPagerState(pageCount = { TopDestination.entries.size })
     val scope = rememberCoroutineScope()
     val destinations = TopDestination.entries
@@ -226,7 +248,6 @@ private fun OriginPodsApp(
                     val icon = when (dest) {
                         TopDestination.DASHBOARD -> MiuixIcons.Home
                         TopDestination.SETTINGS -> MiuixIcons.Settings
-                        TopDestination.ABOUT -> MiuixIcons.Info
                     }
                     NavigationBarItem(
                         selected = pagerState.currentPage == index,
@@ -250,9 +271,7 @@ private fun OriginPodsApp(
                 )
                 TopDestination.SETTINGS -> SettingsTab(
                     onRefresh = onRefreshRequested,
-                    bottomPadding = innerPadding.calculateBottomPadding(),
-                )
-                TopDestination.ABOUT -> AboutTab(
+                    onOpenSupportedDevices = { showSupportedDevices = true },
                     bottomPadding = innerPadding.calculateBottomPadding(),
                 )
             }
@@ -268,6 +287,7 @@ private fun DashboardTab(
 ) {
     val scrollBehavior = MiuixScrollBehavior()
     val activeDevices by OriginDeviceSessionManager.activeDevices.collectAsState()
+    val modelCount = remember { OppoModelCatalog.allModels().size }
 
     val mergedSessions = remember(activeDevices, remoteStates.toMap()) {
         val map = linkedMapOf<String, SessionCardModel>()
@@ -329,6 +349,7 @@ private fun DashboardTab(
             item(key = "runtime-status") {
                 RuntimeStatusCard(
                     sessions = mergedSessions,
+                    modelCount = modelCount,
                     onRefresh = onRefresh,
                 )
             }
@@ -376,6 +397,7 @@ private data class SessionCardModel(
 @Composable
 private fun RuntimeStatusCard(
     sessions: List<SessionCardModel>,
+    modelCount: Int,
     onRefresh: () -> Unit,
 ) {
     val ready = sessions.any { it.handshakeReady }
@@ -383,7 +405,7 @@ private fun RuntimeStatusCard(
     val summary = if (ready) {
         "已接管连接中心与系统蓝牙设置，控制由系统原生界面承担"
     } else {
-        "连接 OPPO / OnePlus 耳机后自动同步至 OriginOS"
+        "已内置 $modelCount+ 款 OPPO / 一加 / realme 耳机型号，连接后自动同步"
     }
     val dark = isSystemInDarkTheme()
     val container = when {
@@ -685,16 +707,34 @@ private fun NoiseMode.toDisplayLabel(): String = when (this) {
     NoiseMode.WIND -> "抗风噪"
 }
 
+private data class GitHubReleaseInfo(
+    val tag: String,
+    val url: String,
+    val notes: String,
+)
+
+private sealed interface UpdateState {
+    data object Idle : UpdateState
+    data object Checking : UpdateState
+    data class UpToDate(val currentTag: String) : UpdateState
+    data class Available(val release: GitHubReleaseInfo) : UpdateState
+    data class Failed(val message: String) : UpdateState
+}
+
 @Composable
 private fun SettingsTab(
     onRefresh: () -> Unit,
+    onOpenSupportedDevices: () -> Unit,
     bottomPadding: Dp,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val scrollBehavior = MiuixScrollBehavior()
-    val adapters = remember { EarbudAdapterRegistry.catalog() }
-    var disabledIds by remember { mutableStateOf(OriginDeviceSessionManager.disabledAdapterIds) }
+    val modelCount = remember { OppoModelCatalog.allModels().size }
     var yieldEnabled by remember { mutableStateOf(true) }
+    var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+
     val launcherAlias = remember(context) {
         ComponentName(context, "com.originpods.app.ui.LauncherAlias")
     }
@@ -703,6 +743,30 @@ private fun SettingsTab(
             context.packageManager.getComponentEnabledSetting(launcherAlias) ==
                 PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
         )
+    }
+
+    fun openUrl(url: String) {
+        runCatching {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }
+    }
+
+    fun checkGitHubUpdate() {
+        if (updateState is UpdateState.Checking) return
+        updateState = UpdateState.Checking
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { fetchLatestGitHubRelease() }
+            updateState = result
+            showUpdateDialog = true
+        }
+    }
+
+    val updateSummary = when (val s = updateState) {
+        UpdateState.Idle -> "当前版本 v${BuildConfig.VERSION_NAME} · 点击从 GitHub 检查"
+        UpdateState.Checking -> "正在连接 GitHub Releases..."
+        is UpdateState.UpToDate -> "已是最新版本 (${s.currentTag})"
+        is UpdateState.Available -> "发现新版本 ${s.release.tag}"
+        is UpdateState.Failed -> "检查失败: ${s.message}"
     }
 
     Scaffold(
@@ -755,6 +819,11 @@ private fun SettingsTab(
                             summary = "检测到欢律 (HeyMelody) 启动时自动让出 RFCOMM 通道",
                         )
                         ArrowPreference(
+                            title = "支持的设备",
+                            summary = "查看与搜索已适配的 $modelCount 款 OPPO / 一加 / realme 耳机",
+                            onClick = onOpenSupportedDevices,
+                        )
+                        ArrowPreference(
                             title = "LSPosed 推荐作用域",
                             summary = "蓝牙 · 连接中心 · 设置 · VivoTws",
                             onClick = onRefresh,
@@ -762,27 +831,235 @@ private fun SettingsTab(
                     }
                 }
             }
-            item { SmallTitle(text = "已注册协议适配器") }
+
+            item { SmallTitle(text = "关于与更新") }
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column {
-                        adapters.forEach { adapter ->
-                            val enabled = adapter.id !in disabledIds
-                            SwitchPreference(
-                                checked = enabled,
-                                onCheckedChange = { nextEnabled ->
-                                    val next = if (nextEnabled) {
-                                        disabledIds - adapter.id
-                                    } else {
-                                        disabledIds + adapter.id
-                                    }
-                                    disabledIds = next
-                                    OriginDeviceSessionManager.disabledAdapterIds = next
-                                },
-                                title = adapter.displayName,
-                                summary = "ID: ${adapter.id} · ${adapter.resolution.name}",
+                        ArrowPreference(
+                            title = "检查更新 (GitHub)",
+                            summary = updateSummary,
+                            onClick = ::checkGitHubUpdate,
+                        )
+                        ArrowPreference(
+                            title = "GitHub 开源仓库",
+                            summary = "github.com/Syuuieo/OriginPods",
+                            onClick = { openUrl("https://github.com/Syuuieo/OriginPods") },
+                        )
+                        ArrowPreference(
+                            title = "开源协议与致谢",
+                            summary = "GPL-3.0 · 致谢 HyperEars / OppoPods / Miuix",
+                            onClick = { openUrl("https://github.com/silverpoetry/HyperEars") },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    val currentDialogState = updateState
+    WindowDialog(
+        show = showUpdateDialog && currentDialogState !is UpdateState.Idle && currentDialogState !is UpdateState.Checking,
+        title = when (currentDialogState) {
+            is UpdateState.Available -> "发现新版本 ${currentDialogState.release.tag}"
+            is UpdateState.UpToDate -> "已是最新版本"
+            is UpdateState.Failed -> "检查更新失败"
+            else -> ""
+        },
+        summary = when (currentDialogState) {
+            is UpdateState.Available -> currentDialogState.release.notes.ifBlank {
+                "当前版本 v${BuildConfig.VERSION_NAME}，可前往 GitHub Release 下载最新版 APK。"
+            }
+            is UpdateState.UpToDate -> "当前已安装最新正式版 v${BuildConfig.VERSION_NAME}。"
+            is UpdateState.Failed -> currentDialogState.message
+            else -> ""
+        },
+        onDismissRequest = { showUpdateDialog = false },
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            TextButton(
+                text = "关闭",
+                onClick = { showUpdateDialog = false },
+                modifier = Modifier.weight(1f),
+            )
+            if (currentDialogState is UpdateState.Available) {
+                TextButton(
+                    text = "前往下载",
+                    onClick = {
+                        showUpdateDialog = false
+                        openUrl(currentDialogState.release.url)
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                )
+            }
+        }
+    }
+}
+
+private fun fetchLatestGitHubRelease(): UpdateState {
+    return runCatching {
+        val url = URL("https://api.github.com/repos/Syuuieo/OriginPods/releases/latest")
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 8000
+            readTimeout = 8000
+            setRequestProperty("Accept", "application/vnd.github+json")
+            setRequestProperty("User-Agent", "OriginPods/${BuildConfig.VERSION_NAME}")
+        }
+        val code = conn.responseCode
+        if (code !in 200..299) {
+            return UpdateState.Failed("HTTP $code")
+        }
+        val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        val json = JSONObject(body)
+        val tag = json.optString("tag_name").ifBlank { return UpdateState.Failed("未找到版本标签") }
+        val htmlUrl = json.optString("html_url", "https://github.com/Syuuieo/OriginPods/releases")
+        val notes = json.optString("body", "").take(300)
+        val remoteVer = tag.removePrefix("v").trim()
+        val localVer = BuildConfig.VERSION_NAME.removePrefix("v").trim()
+        if (compareSemver(remoteVer, localVer) > 0) {
+            UpdateState.Available(GitHubReleaseInfo(tag = tag, url = htmlUrl, notes = notes))
+        } else {
+            UpdateState.UpToDate(tag)
+        }
+    }.getOrElse { err ->
+        UpdateState.Failed(err.message ?: "网络请求异常")
+    }
+}
+
+private fun compareSemver(remote: String, local: String): Int {
+    val rParts = remote.split(".").map { it.toIntOrNull() ?: 0 }
+    val lParts = local.split(".").map { it.toIntOrNull() ?: 0 }
+    val max = maxOf(rParts.size, lParts.size)
+    for (i in 0 until max) {
+        val r = rParts.getOrElse(i) { 0 }
+        val l = lParts.getOrElse(i) { 0 }
+        if (r != l) return r.compareTo(l)
+    }
+    return 0
+}
+
+@Composable
+private fun SupportedDevicesScreen(
+    onBack: () -> Unit,
+) {
+    BackHandler(onBack = onBack)
+
+    val scrollBehavior = MiuixScrollBehavior()
+    var query by remember { mutableStateOf("") }
+    val allModels = remember {
+        OppoModelCatalog.allModels()
+            .distinctBy { "${it.id}_${it.name}" }
+            .sortedWith(compareBy<OppoModelSpec> { it.brand.lowercase() }.thenBy { it.name.lowercase() })
+    }
+    val filteredModels = remember(query, allModels) {
+        val needle = query.trim().lowercase()
+        if (needle.isEmpty()) {
+            allModels
+        } else {
+            allModels.filter { spec ->
+                spec.name.lowercase().contains(needle) ||
+                    spec.brand.lowercase().contains(needle) ||
+                    spec.id.lowercase().contains(needle) ||
+                    spec.aliases.any { it.contains(needle.replace(" ", "")) }
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            SmallTopAppBar(
+                title = "支持的设备 (${filteredModels.size})",
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = MiuixIcons.Back,
+                            contentDescription = "返回",
+                            tint = MiuixTheme.colorScheme.onSurface,
+                        )
+                    }
+                },
+                scrollBehavior = scrollBehavior,
+            )
+        },
+    ) { pagePadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = pagePadding.calculateTopPadding()),
+        ) {
+            TextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                label = "搜索型号、品牌或 Product ID",
+                useLabelAsPlaceholder = true,
+                singleLine = true,
+                leadingIcon = {
+                    Icon(
+                        imageVector = MiuixIcons.Search,
+                        contentDescription = null,
+                        modifier = Modifier.padding(start = 12.dp).size(18.dp),
+                        tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                },
+                trailingIcon = if (query.isNotEmpty()) {
+                    {
+                        IconButton(onClick = { query = "" }) {
+                            Icon(
+                                imageVector = MiuixIcons.Close,
+                                contentDescription = "清除搜索",
+                                modifier = Modifier.size(18.dp),
+                                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             )
                         }
+                    }
+                } else {
+                    null
+                },
+            )
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .nestedScroll(scrollBehavior.nestedScrollConnection),
+                contentPadding = PaddingValues(
+                    start = 12.dp,
+                    end = 12.dp,
+                    top = 4.dp,
+                    bottom = pagePadding.calculateBottomPadding() + 16.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (filteredModels.isEmpty()) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            insideMargin = PaddingValues(18.dp),
+                        ) {
+                            Text(
+                                text = "未找到匹配的耳机型号",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MiuixTheme.colorScheme.onSurface,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "可尝试搜索 OPPO、OnePlus、realme 或耳机型号关键字",
+                                fontSize = 13.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                        }
+                    }
+                } else {
+                    items(filteredModels, key = { "${it.id}_${it.name}" }) { spec ->
+                        SupportedDeviceItemCard(spec)
                     }
                 }
             }
@@ -791,76 +1068,55 @@ private fun SettingsTab(
 }
 
 @Composable
-private fun AboutTab(bottomPadding: Dp) {
-    val scrollBehavior = MiuixScrollBehavior()
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            TopAppBar(
-                title = "关于",
-                scrollBehavior = scrollBehavior,
-            )
-        },
-    ) { pagePadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = pagePadding.calculateTopPadding())
-                .nestedScroll(scrollBehavior.nestedScrollConnection),
-            contentPadding = PaddingValues(
-                start = 12.dp,
-                end = 12.dp,
-                top = 8.dp,
-                bottom = bottomPadding + 16.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+private fun SupportedDeviceItemCard(spec: OppoModelSpec) {
+    val brandLabel = when (spec.brand.lowercase()) {
+        "oppo" -> "OPPO"
+        "oneplus" -> "OnePlus"
+        "realme" -> "realme"
+        else -> spec.brand.ifBlank { "OPPO" }
+    }
+    val ancSummary = if (spec.supportedNoiseModes.isNotEmpty()) {
+        "${spec.supportedNoiseModes.size} 档降噪控制"
+    } else {
+        "基础电量与状态"
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Text(
-                            text = "OriginPods",
-                            style = MiuixTheme.textStyles.title2,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            text = "版本 v${BuildConfig.VERSION_NAME} · OriginOS 蓝牙耳机原生集成模块",
-                            style = MiuixTheme.textStyles.body2,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "将第三方 OPPO / OnePlus TWS 耳机原生接入 OriginOS 连接中心卡片、播放声音查找、系统蓝牙设置与 VivoTws 详情页，无需在模块控制台内手动切换。",
-                            style = MiuixTheme.textStyles.body2,
-                        )
-                    }
-                }
-            }
-            item { SmallTitle(text = "系统作用域清单") }
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        listOf(
-                            "com.android.bluetooth — RFCOMM 协议与连接中心数据桥接",
-                            "com.vivo.connbase.connectcenter — 降噪图标与播放声音转发",
-                            "com.android.settings — 蓝牙设备列表原生入口识别",
-                            "com.android.vivo.tws.vivotws — 原生耳机详情页与设置项桥接",
-                        ).forEach { line ->
-                            Text(
-                                text = line,
-                                style = MiuixTheme.textStyles.footnote1,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            )
-                        }
-                    }
-                }
+            Text(
+                text = spec.name,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MiuixTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.12f))
+                    .padding(horizontal = 10.dp, vertical = 3.dp),
+            ) {
+                Text(
+                    text = brandLabel,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MiuixTheme.colorScheme.primary,
+                )
             }
         }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "ID: ${spec.id.ifBlank { "-" }} · $ancSummary · ${if (spec.supportSpp) "SPP 协议" else "通用"}",
+            fontSize = 12.sp,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
     }
 }

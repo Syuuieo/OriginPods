@@ -19,6 +19,10 @@ abstract class OpoProtocolAdapter : StandardEarbudAdapter() {
             uuid = RFCOMM_UUID,
             id = "oppo-private-rfcomm",
         ),
+        RfcommEndpointSpec.ServiceUuid(
+            uuid = LEGACY_RFCOMM_UUID,
+            id = "oppo-legacy-rfcomm",
+        ),
     )
     open val wireConfig: OppoWireConfig = OppoWireConfig.STANDARD
 
@@ -27,19 +31,26 @@ abstract class OpoProtocolAdapter : StandardEarbudAdapter() {
 
     companion object {
         const val RFCOMM_UUID = "0000079a-d102-11e1-9b23-00025b00a5a5"
+        const val LEGACY_RFCOMM_UUID = "00001107-d102-11e1-9b23-00025b00a5a5"
     }
 }
 
-/** OPPO/Enco names select a candidate; valid protocol reports unlock private capabilities. */
+/** OPPO/Enco/realme names select a candidate; valid protocol reports unlock private capabilities. */
 open class OppoEarbudAdapter : OpoProtocolAdapter() {
     override val id: String = ID
-    override val displayName: String = "OPPO Enco 系列"
+    override val displayName: String = "OPPO Enco / realme 全系"
     override val resolution: AdapterResolution = AdapterResolution.FAMILY_MATCH
 
     override fun matches(identity: EarbudIdentity): Boolean {
         if (!identity.standardHeadset || identity.nativeSystemEarbud) return false
-        val name = normalizeDeviceName(identity.deviceName.orEmpty())
-        return name.contains("oppo") || name.contains("enco")
+        val rawName = identity.deviceName.orEmpty()
+        val name = normalizeDeviceName(rawName)
+        if (name.contains("oppo") || name.contains("enco") || name.contains("realme")) {
+            return true
+        }
+        val catalogHit = OppoModelCatalog.byDeviceName(rawName) ?: return false
+        return catalogHit.brand.equals("oppo", ignoreCase = true) ||
+            catalogHit.brand.equals("realme", ignoreCase = true)
     }
 
     companion object {
@@ -122,8 +133,10 @@ private class OppoProtocolSession(
     private var handshakePublished = false
     private var battery = EarbudBattery()
     private var pendingNotificationRegistration: ByteArray? = null
+    private var activeModel: OppoModelSpec? = null
 
     override fun initialReadCommands(): List<ByteArray> = listOf(
+        OppoWireCodec.queryProductId,
         OppoWireCodec.queryNotificationSupport,
         OppoWireCodec.queryBattery,
         OppoWireCodec.queryAnc,
@@ -134,7 +147,15 @@ private class OppoProtocolSession(
 
     override fun encode(request: ControlRequest): List<ByteArray> = when (request) {
         ControlRequest.Refresh -> initialReadCommands()
-        is ControlRequest.SetNoiseMode -> request.mode.toWireCommand()?.let(::listOf).orEmpty()
+        is ControlRequest.SetNoiseMode -> {
+            val dynamicBit = activeModel?.modeToBit?.get(request.mode)
+            val bytes = if (dynamicBit != null) {
+                OppoWireCodec.setAncByIndex(dynamicBit)
+            } else {
+                request.mode.toWireCommand()
+            }
+            bytes?.let(::listOf).orEmpty()
+        }
         is ControlRequest.SetFindBuds -> listOf(OppoWireCodec.setFindBuds(request.ringing))
         is ControlRequest.SetFeatureToggle -> listOf(
             OppoWireCodec.setFeature(request.featureCode, request.enabled),
@@ -161,6 +182,22 @@ private class OppoProtocolSession(
     override fun offer(bytes: ByteArray): List<ProtocolEvent> =
         decoder.offer(bytes).flatMap { frame ->
             buildList {
+                OppoWireCodec.parseProductId(frame)?.let { productId ->
+                    val model = OppoModelCatalog.byProductId(productId)
+                    if (model != null) {
+                        activeModel = model
+                        publishHandshakeIfNeeded()
+                        if (model.supportedNoiseModes.isNotEmpty()) {
+                            add(
+                                ProtocolEvent.CapabilitiesIdentified(
+                                    battery = false,
+                                    noiseModes = model.supportedNoiseModes,
+                                ),
+                            )
+                        }
+                    }
+                    return@buildList
+                }
                 OppoWireCodec.parseNotificationSupport(frame)?.let { advertisedIds ->
                     val subscribableIds = advertisedIds.filterNot { it.isDebugNotification() }
                         .toByteArray()
@@ -182,19 +219,22 @@ private class OppoProtocolSession(
                     add(ProtocolEvent.FeatureStateChanged(BatteryFeatureState(battery)))
                     return@buildList
                 }
-                OppoWireCodec.parseAncState(frame)
-                    ?.toDomainMode()
-                    ?.let { mode ->
-                        publishHandshakeIfNeeded()
-                        add(
-                            ProtocolEvent.CapabilitiesIdentified(
-                                battery = false,
-                                noiseModes = OPPO_NOISE_MODES,
-                            ),
-                        )
-                        add(ProtocolEvent.FeatureStateChanged(NoiseModeFeatureState(mode)))
-                        return@buildList
-                    }
+                val dynamicMode = OppoWireCodec.parseAncBitIndex(frame)
+                    ?.let { bit -> activeModel?.bitToMode?.get(bit) }
+                val resolvedMode = dynamicMode ?: OppoWireCodec.parseAncState(frame)?.toDomainMode()
+                if (resolvedMode != null) {
+                    publishHandshakeIfNeeded()
+                    val capsModes = activeModel?.supportedNoiseModes?.takeIf { it.isNotEmpty() }
+                        ?: OPPO_NOISE_MODES
+                    add(
+                        ProtocolEvent.CapabilitiesIdentified(
+                            battery = false,
+                            noiseModes = capsModes,
+                        ),
+                    )
+                    add(ProtocolEvent.FeatureStateChanged(NoiseModeFeatureState(resolvedMode)))
+                    return@buildList
+                }
                 OppoWireCodec.parseStatusMap(frame)?.let { toggles ->
                     publishHandshakeIfNeeded()
                     add(ProtocolEvent.FeatureStateChanged(OppoTogglesFeatureState(toggles)))
