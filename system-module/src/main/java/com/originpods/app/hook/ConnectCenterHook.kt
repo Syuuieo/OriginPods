@@ -32,6 +32,7 @@ class ConnectCenterHook(
 ) : ProcessHook {
 
     private val cachedStates = ConcurrentHashMap<String, RemotePodState>()
+    private val ringingStates = ConcurrentHashMap<String, Boolean>()
     @Volatile
     private var contextRef: Context? = null
 
@@ -67,6 +68,9 @@ class ConnectCenterHook(
                         ?.let { runCatching { NoiseMode.valueOf(it) }.getOrNull() }
                         ?: prev?.noiseMode
                     cachedStates[mac] = RemotePodState(mac, name, left, right, box, cs, mode)
+                    if (intent.hasExtra("ringing")) {
+                        ringingStates[mac] = intent.getBooleanExtra("ringing", false)
+                    }
                     module.log(Log.INFO, TAG, "received state mac=$mac L=$left R=$right B=$box mode=$mode")
                 }
             },
@@ -172,6 +176,40 @@ class ConnectCenterHook(
                     module.log(Log.INFO, TAG, "hooked $clsName.$methodName for find_earphone")
                 }
             }
+        }
+
+        // Override BaseDeviceCardView.(String)->boolean (e.g. l(serviceId)) so OriginOS 6 & 7
+        // vdfs_find_earphone keeps ringing state instead of falling back to VServiceCap.usingState == 3
+        runCatching {
+            val baseCardClass = classLoader.loadClass("com.vivo.connect.center.view.BaseDeviceCardView")
+            val baseDeviceClass = classLoader.loadClass("com.vivo.connectcenter.common.bean.BaseDevice")
+            val devField = baseCardClass.declaredFields
+                .firstOrNull { baseDeviceClass.isAssignableFrom(it.type) }
+                ?.apply { isAccessible = true }
+            baseCardClass.declaredMethods
+                .filter {
+                    it.parameterCount == 1 &&
+                        it.parameterTypes[0] == String::class.java &&
+                        it.returnType == Boolean::class.javaPrimitiveType
+                }
+                .forEach { method ->
+                    method.isAccessible = true
+                    module.hook(method).intercept { chain ->
+                        val serviceId = chain.args.getOrNull(0) as? String
+                        if (serviceId == "vdfs_find_earphone" || serviceId == "twsconn_find_earphone") {
+                            val cardView = chain.thisObject
+                            val devInfo = cardView?.let { runCatching { devField?.get(it) }.getOrNull() }
+                            val mac = devInfo?.let {
+                                runCatching { it.javaClass.getMethod("getId").invoke(it) as? String }.getOrNull()
+                            }
+                            if (mac != null && cachedStates.containsKey(mac)) {
+                                return@intercept (ringingStates[mac] ?: false)
+                            }
+                        }
+                        chain.proceed()
+                    }
+                }
+            module.log(Log.INFO, TAG, "hooked BaseDeviceCardView find_earphone state")
         }
     }
 
@@ -351,6 +389,7 @@ class ConnectCenterHook(
                 "key_stop_ring" -> false
                 else -> return false
             }
+            ringingStates[mac] = ringing
             val ctx = contextRef ?: runCatching {
                 Class.forName("android.app.ActivityThread")
                     .getDeclaredMethod("currentApplication")

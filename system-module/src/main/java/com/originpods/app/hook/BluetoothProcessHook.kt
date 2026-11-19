@@ -379,6 +379,7 @@ class BluetoothProcessHook(
             if (eqPreset != null) {
                 putExtra("eq_preset", eqPreset)
             }
+            putExtra("ringing", ringingStates[mac] ?: false)
             if (toggles != null) {
                 putExtra("toggles_keys", toggles.keys.toIntArray())
                 putExtra("toggles_vals", toggles.values.toBooleanArray())

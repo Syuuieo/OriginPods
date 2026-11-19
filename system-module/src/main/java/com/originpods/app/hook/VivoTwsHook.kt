@@ -467,9 +467,10 @@ class VivoTwsHook(
             ?: cachedStates.keys.firstOrNull()
             ?: return false
         val mode = when {
-            actionJson.contains("anc", ignoreCase = true) || actionJson.contains("noise_reduction") -> NoiseMode.ANC
-            actionJson.contains("transparency", ignoreCase = true) || actionJson.contains("hear") -> NoiseMode.TRANSPARENCY
-            actionJson.contains("off", ignoreCase = true) || actionJson.contains("close") -> NoiseMode.OFF
+            actionJson.contains("key_auto") || actionJson.contains("adaptive", ignoreCase = true) -> NoiseMode.ANC_ADAPTIVE
+            actionJson.contains("key_noice_reduction") || actionJson.contains("noise_reduction") || actionJson.contains("anc", ignoreCase = true) -> NoiseMode.ANC
+            actionJson.contains("key_transparent") || actionJson.contains("transparency", ignoreCase = true) || actionJson.contains("hear") -> NoiseMode.TRANSPARENCY
+            actionJson.contains("key_close") || actionJson.contains("off", ignoreCase = true) || actionJson.contains("close") -> NoiseMode.OFF
             else -> return false
         }
         val ctx = appContext ?: return false
