@@ -368,7 +368,22 @@ class ConnectCenterHook(
         }.getOrDefault(false)
     }
 
+    private fun candidateIconNames(key: String?): List<String> = when (key) {
+        "key_noice_reduction" -> listOf("ic_noise_reduction", "icon_noise_reduction")
+        "key_auto" -> listOf("ic_noise_adaptive", "icon_noise_adaptive", "ic_noise_auto", "icon_noise_auto")
+        "key_transparent" -> listOf("ic_noise_trans", "ic_noise_transparent", "icon_noise_trans")
+        "key_close" -> listOf("ic_noise_close", "icon_noise_close", "ic_noise_off")
+        else -> emptyList()
+    }
+
     private fun noiseIconAndLabel(key: String?): Pair<Int, String>? {
+        val label = when (key) {
+            "key_noice_reduction" -> "降噪"
+            "key_auto" -> "自适应"
+            "key_transparent" -> "通透"
+            "key_close" -> "关闭"
+            else -> return null
+        }
         val appCtx = contextRef ?: runCatching {
             Class.forName("android.app.ActivityThread")
                 .getDeclaredMethod("currentApplication")
@@ -378,40 +393,35 @@ class ConnectCenterHook(
         val pkg = "com.vivo.connbase.connectcenter"
         val twsPkg = "com.android.vivo.tws.vivotws"
         val twsRes = runCatching { appCtx?.packageManager?.getResourcesForApplication(twsPkg) }.getOrNull()
-        fun iconId(name: String, fallback: Int): Int {
+        val names = candidateIconNames(key)
+        for (name in names) {
             val ccId = res?.getIdentifier(name, "drawable", pkg)?.takeIf { it != 0 }
-            if (ccId != null) return ccId
+            if (ccId != null) return ccId to label
+        }
+        for (name in names) {
             val twsId = twsRes?.getIdentifier(name, "drawable", twsPkg)?.takeIf { it != 0 }
-            return twsId ?: fallback
+            if (twsId != null) return twsId to label
         }
-
-        return when (key) {
-            "key_noice_reduction" -> iconId("ic_noise_reduction", 0x7f080217) to "降噪"
-            "key_auto" -> iconId("icon_noise_adaptive", 0x7f080234) to "自适应"
-            "key_transparent" -> iconId("ic_noise_trans", 0x7f080218) to "通透"
-            "key_close" -> iconId("ic_noise_close", 0x7f080216) to "关闭"
-            else -> null
-        }
+        return 0 to label
     }
 
     private fun resolveNoiseDrawable(ctx: Context, key: String, imgNormal: Int): android.graphics.drawable.Drawable? {
-        val resName = when (key) {
-            "key_noice_reduction" -> "ic_noise_reduction"
-            "key_auto" -> "icon_noise_adaptive"
-            "key_transparent" -> "ic_noise_trans"
-            "key_close" -> "ic_noise_close"
-            else -> return null
-        }
-        val ccId = ctx.resources.getIdentifier(resName, "drawable", "com.vivo.connbase.connectcenter")
-        if (ccId != 0) {
-            runCatching { ctx.getDrawable(ccId) }.getOrNull()?.let { return it }
+        val names = candidateIconNames(key)
+        if (names.isEmpty()) return null
+        for (resName in names) {
+            val ccId = ctx.resources.getIdentifier(resName, "drawable", "com.vivo.connbase.connectcenter")
+            if (ccId != 0) {
+                runCatching { ctx.getDrawable(ccId) }.getOrNull()?.let { return it }
+            }
         }
         val twsPkg = "com.android.vivo.tws.vivotws"
         val twsRes = runCatching { ctx.packageManager.getResourcesForApplication(twsPkg) }.getOrNull()
         if (twsRes != null) {
-            val twsId = twsRes.getIdentifier(resName, "drawable", twsPkg)
-            if (twsId != 0) {
-                runCatching { twsRes.getDrawable(twsId, null) }.getOrNull()?.let { return it }
+            for (resName in names) {
+                val twsId = twsRes.getIdentifier(resName, "drawable", twsPkg)
+                if (twsId != 0) {
+                    runCatching { twsRes.getDrawable(twsId, null) }.getOrNull()?.let { return it }
+                }
             }
             if (imgNormal > 0) {
                 runCatching { twsRes.getDrawable(imgNormal, null) }.getOrNull()?.let { return it }
@@ -478,7 +488,7 @@ class ConnectCenterHook(
             val key = soundItemClass.getMethod("getSoundKey").invoke(item) as? String
             val (icon, label) = noiseIconAndLabel(key) ?: return
             val imgNormal = soundItemClass.getMethod("getImgNormal").invoke(item) as? Int ?: 0
-            if (imgNormal <= 0) {
+            if (icon > 0 && imgNormal <= 0) {
                 soundItemClass.getMethod("setImgNormal", Int::class.javaPrimitiveType).invoke(item, icon)
                 soundItemClass.getMethod("setImgHigh", Int::class.javaPrimitiveType).invoke(item, icon)
             }
