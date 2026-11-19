@@ -226,15 +226,27 @@ private enum class TopDestination(val label: String) {
     SETTINGS("设置"),
 }
 
+private enum class SecondaryPage {
+    SUPPORTED_DEVICES,
+    ABOUT,
+}
+
 @Composable
 private fun OriginPodsApp(
     remoteStates: Map<String, RemoteTelemetryUi>,
     onRefreshRequested: () -> Unit,
 ) {
-    var showSupportedDevices by remember { mutableStateOf(false) }
-    if (showSupportedDevices) {
-        SupportedDevicesScreen(onBack = { showSupportedDevices = false })
-        return
+    var secondaryPage by remember { mutableStateOf<SecondaryPage?>(null) }
+    when (secondaryPage) {
+        SecondaryPage.SUPPORTED_DEVICES -> {
+            SupportedDevicesScreen(onBack = { secondaryPage = null })
+            return
+        }
+        SecondaryPage.ABOUT -> {
+            AboutScreen(onBack = { secondaryPage = null })
+            return
+        }
+        null -> Unit
     }
 
     val pagerState = rememberPagerState(pageCount = { TopDestination.entries.size })
@@ -271,7 +283,8 @@ private fun OriginPodsApp(
                 )
                 TopDestination.SETTINGS -> SettingsTab(
                     onRefresh = onRefreshRequested,
-                    onOpenSupportedDevices = { showSupportedDevices = true },
+                    onOpenSupportedDevices = { secondaryPage = SecondaryPage.SUPPORTED_DEVICES },
+                    onOpenAbout = { secondaryPage = SecondaryPage.ABOUT },
                     bottomPadding = innerPadding.calculateBottomPadding(),
                 )
             }
@@ -725,6 +738,7 @@ private sealed interface UpdateState {
 private fun SettingsTab(
     onRefresh: () -> Unit,
     onOpenSupportedDevices: () -> Unit,
+    onOpenAbout: () -> Unit,
     bottomPadding: Dp,
 ) {
     val context = LocalContext.current
@@ -837,6 +851,11 @@ private fun SettingsTab(
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column {
                         ArrowPreference(
+                            title = "关于 OriginPods",
+                            summary = "版本 v${BuildConfig.VERSION_NAME} · 作用域清单、开源协议与致谢",
+                            onClick = onOpenAbout,
+                        )
+                        ArrowPreference(
                             title = "检查更新 (GitHub)",
                             summary = updateSummary,
                             onClick = ::checkGitHubUpdate,
@@ -845,11 +864,6 @@ private fun SettingsTab(
                             title = "GitHub 开源仓库",
                             summary = "github.com/Syuuieo/OriginPods",
                             onClick = { openUrl("https://github.com/Syuuieo/OriginPods") },
-                        )
-                        ArrowPreference(
-                            title = "开源协议与致谢",
-                            summary = "GPL-3.0 · 致谢 HyperEars / OppoPods / Miuix",
-                            onClick = { openUrl("https://github.com/silverpoetry/HyperEars") },
                         )
                     }
                 }
@@ -1118,5 +1132,184 @@ private fun SupportedDeviceItemCard(spec: OppoModelSpec) {
             fontSize = 12.sp,
             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
         )
+    }
+}
+
+@Composable
+private fun AboutScreen(
+    onBack: () -> Unit,
+) {
+    BackHandler(onBack = onBack)
+
+    val context = LocalContext.current
+    val scrollBehavior = MiuixScrollBehavior()
+    val modelCount = remember { OppoModelCatalog.allModels().size }
+
+    fun openUrl(url: String) {
+        runCatching {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            SmallTopAppBar(
+                title = "关于",
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = MiuixIcons.Back,
+                            contentDescription = "返回",
+                            tint = MiuixTheme.colorScheme.onSurface,
+                        )
+                    }
+                },
+                scrollBehavior = scrollBehavior,
+            )
+        },
+    ) { pagePadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = pagePadding.calculateTopPadding())
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+            contentPadding = PaddingValues(
+                start = 12.dp,
+                end = 12.dp,
+                top = 8.dp,
+                bottom = pagePadding.calculateBottomPadding() + 20.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    insideMargin = PaddingValues(18.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "OriginPods",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MiuixTheme.colorScheme.onSurface,
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.14f))
+                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                        ) {
+                            Text(
+                                text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MiuixTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "面向 vivo OriginOS 6 / 7 的第三方蓝牙耳机原生集成模块",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MiuixTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = "在不接管 Android A2DP/HFP 音频链路的前提下，将受支持的 OPPO / 一加 / realme 耳机原生接入 OriginOS 连接中心卡片、系统蓝牙设置与 VivoTws 详情页。",
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                }
+            }
+
+            item { SmallTitle(text = "项目信息") }
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column {
+                        ArrowPreference(
+                            title = "GitHub 开源仓库",
+                            summary = "github.com/Syuuieo/OriginPods",
+                            onClick = { openUrl("https://github.com/Syuuieo/OriginPods") },
+                        )
+                        ArrowPreference(
+                            title = "开源协议",
+                            summary = "GNU General Public License v3.0 (GPL-3.0)",
+                            onClick = { openUrl("https://github.com/Syuuieo/OriginPods/blob/main/LICENSE") },
+                        )
+                        ArrowPreference(
+                            title = "已收录设备目录",
+                            summary = "共 $modelCount 款 OPPO / OnePlus / realme 型号",
+                            onClick = null,
+                        )
+                    }
+                }
+            }
+
+            item { SmallTitle(text = "系统作用域清单") }
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    insideMargin = PaddingValues(16.dp),
+                ) {
+                    val scopes = listOf(
+                        "com.android.bluetooth" to "维护单会话 RFCOMM 通道并向系统进程广播电量与降噪状态",
+                        "com.vivo.connbase.connectcenter" to "注入连接中心降噪图标/标签与查找响铃转发（兼容 OriginOS 6 / 7）",
+                        "com.android.settings" to "系统蓝牙设备列表识别为原生 TWS 入口",
+                        "com.android.vivo.tws.vivotws" to "原生耳机详情页电量、降噪模式与功能开关桥接",
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        scopes.forEach { (pkg, desc) ->
+                            Column {
+                                Text(
+                                    text = pkg,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MiuixTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = desc,
+                                    fontSize = 12.sp,
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            item { SmallTitle(text = "致谢与参考") }
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column {
+                        ArrowPreference(
+                            title = "HyperEars",
+                            summary = "参考模块整体架构、协议/适配器分层、蓝牙单会话桥接与 Miuix 界面风格",
+                            onClick = { openUrl("https://github.com/silverpoetry/HyperEars") },
+                        )
+                        ArrowPreference(
+                            title = "OppoPods",
+                            summary = "参考 OPPO / 一加 / realme 设备白名单目录与 0x8103 协议字段解析",
+                            onClick = { openUrl("https://github.com/Leaf-lsgtky/OppoPods") },
+                        )
+                        ArrowPreference(
+                            title = "Miuix",
+                            summary = "Compose Multiplatform UI 组件库",
+                            onClick = { openUrl("https://github.com/compose-miuix-ui/miuix") },
+                        )
+                        ArrowPreference(
+                            title = "libxposed",
+                            summary = "现代 Xposed API 101+ 模块开发接口",
+                            onClick = { openUrl("https://github.com/libxposed/api") },
+                        )
+                    }
+                }
+            }
+        }
     }
 }
