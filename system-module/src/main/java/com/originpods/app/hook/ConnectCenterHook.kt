@@ -33,8 +33,14 @@ class ConnectCenterHook(
 
     private val cachedStates = ConcurrentHashMap<String, RemotePodState>()
     private val ringingStates = ConcurrentHashMap<String, Boolean>()
+    private val resolvedIconIds = ConcurrentHashMap<String, Int>()
+    private val holderImageFields = ConcurrentHashMap<Class<*>, java.lang.reflect.Field>()
     @Volatile
     private var contextRef: Context? = null
+    @Volatile
+    private var twsResourcesCache: android.content.res.Resources? = null
+    @Volatile
+    private var twsResourcesAttempted = false
 
     override fun install() {
         Handler(Looper.getMainLooper()).postDelayed({
@@ -361,11 +367,13 @@ class ConnectCenterHook(
         soundItem: Any,
     ) {
         runCatching {
-            val imageView = holderClass.declaredFields
-                .firstOrNull { android.widget.ImageView::class.java.isAssignableFrom(it.type) }
-                ?.apply { isAccessible = true }
-                ?.get(holder) as? android.widget.ImageView
-                ?: return
+            val field = holderImageFields.getOrPut(holderClass) {
+                holderClass.declaredFields
+                    .firstOrNull { android.widget.ImageView::class.java.isAssignableFrom(it.type) }
+                    ?.apply { isAccessible = true }
+                    ?: return
+            }
+            val imageView = field.get(holder) as? android.widget.ImageView ?: return
             if (imageView.drawable != null) return
 
             val key = soundItemClass.getMethod("getSoundKey").invoke(soundItem) as? String ?: return
@@ -415,6 +423,16 @@ class ConnectCenterHook(
         else -> emptyList()
     }
 
+    private fun getTwsResources(ctx: Context): android.content.res.Resources? {
+        if (!twsResourcesAttempted) {
+            twsResourcesAttempted = true
+            twsResourcesCache = runCatching {
+                ctx.packageManager.getResourcesForApplication("com.android.vivo.tws.vivotws")
+            }.getOrNull()
+        }
+        return twsResourcesCache
+    }
+
     private fun noiseIconAndLabel(key: String?): Pair<Int, String>? {
         val label = when (key) {
             "key_noice_reduction" -> "降噪"
@@ -423,6 +441,9 @@ class ConnectCenterHook(
             "key_close" -> "关闭"
             else -> return null
         }
+        val cached = resolvedIconIds[key]
+        if (cached != null) return cached to label
+
         val appCtx = contextRef ?: runCatching {
             Class.forName("android.app.ActivityThread")
                 .getDeclaredMethod("currentApplication")
@@ -431,17 +452,29 @@ class ConnectCenterHook(
         val res = appCtx?.resources
         val pkg = "com.vivo.connbase.connectcenter"
         val twsPkg = "com.android.vivo.tws.vivotws"
-        val twsRes = runCatching { appCtx?.packageManager?.getResourcesForApplication(twsPkg) }.getOrNull()
+        val twsRes = appCtx?.let { getTwsResources(it) }
         val names = candidateIconNames(key)
+        var foundId = 0
         for (name in names) {
             val ccId = res?.getIdentifier(name, "drawable", pkg)?.takeIf { it != 0 }
-            if (ccId != null) return ccId to label
+            if (ccId != null) {
+                foundId = ccId
+                break
+            }
         }
-        for (name in names) {
-            val twsId = twsRes?.getIdentifier(name, "drawable", twsPkg)?.takeIf { it != 0 }
-            if (twsId != null) return twsId to label
+        if (foundId == 0) {
+            for (name in names) {
+                val twsId = twsRes?.getIdentifier(name, "drawable", twsPkg)?.takeIf { it != 0 }
+                if (twsId != null) {
+                    foundId = twsId
+                    break
+                }
+            }
         }
-        return 0 to label
+        if (appCtx != null) {
+            resolvedIconIds[key] = foundId
+        }
+        return foundId to label
     }
 
     private fun resolveNoiseDrawable(ctx: Context, key: String, imgNormal: Int): android.graphics.drawable.Drawable? {

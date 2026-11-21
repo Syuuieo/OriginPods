@@ -7,6 +7,7 @@ import com.originpods.integration.EarbudAdapterRegistry
 import com.originpods.integration.EarbudIdentity
 import com.originpods.integration.StandardEarbudAdapter
 import io.github.libxposed.api.XposedModule
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Hooks `com.android.settings` (`VivoBluetoothUtils`) so OPPO/OnePlus earbuds are recognized
@@ -17,6 +18,8 @@ class SettingsHook(
     private val module: XposedModule,
     private val classLoader: ClassLoader,
 ) : ProcessHook {
+
+    private val supportCache = ConcurrentHashMap<String, Boolean>()
 
     override fun install() {
         val utilsClass = runCatching {
@@ -45,10 +48,13 @@ class SettingsHook(
 
     private fun isSupportedOppoPod(device: BluetoothDevice): Boolean {
         val name = runCatching { device.name }.getOrNull() ?: return false
-        val adapter = EarbudAdapterRegistry.resolve(
-            EarbudIdentity(address = device.address, deviceName = name),
-        ) ?: return false
-        return adapter.id != StandardEarbudAdapter.ID
+        val cacheKey = "${device.address}|$name"
+        return supportCache.getOrPut(cacheKey) {
+            val adapter = EarbudAdapterRegistry.resolve(
+                EarbudIdentity(address = device.address, deviceName = name),
+            )
+            adapter != null && adapter.id != StandardEarbudAdapter.ID
+        }
     }
 
     companion object {

@@ -14,10 +14,13 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 enum class LogLevel(val shortLabel: String, val priority: Int) {
@@ -68,6 +71,8 @@ object OriginLogStore {
 
     private val idGen = AtomicLong(1L)
     private val lock = Any()
+    private val fileLock = Any()
+    private val persistScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val localEvents = ArrayList<LogEntry>()
     private val _entries = MutableStateFlow<List<LogEntry>>(emptyList())
     val entries: StateFlow<List<LogEntry>> = _entries.asStateFlow()
@@ -208,19 +213,23 @@ object OriginLogStore {
                 _entries.value = current
             }
             if (appCtx != null) {
-                persistLine(appCtx, entry.formatLine())
+                persistLineAsync(appCtx, entry.formatLine())
             }
         }
     }
 
-    private fun persistLine(appCtx: Context, line: String) {
-        runCatching {
-            val file = File(appCtx.filesDir, LOG_FILE_NAME)
-            if (file.exists() && file.length() > 512 * 1024L) {
-                val tail = file.readLines(Charsets.UTF_8).takeLast(800)
-                file.writeText(tail.joinToString("\n") + "\n", Charsets.UTF_8)
+    private fun persistLineAsync(appCtx: Context, line: String) {
+        persistScope.launch {
+            synchronized(fileLock) {
+                runCatching {
+                    val file = File(appCtx.filesDir, LOG_FILE_NAME)
+                    if (file.exists() && file.length() > 512 * 1024L) {
+                        val tail = file.readLines(Charsets.UTF_8).takeLast(800)
+                        file.writeText(tail.joinToString("\n") + "\n", Charsets.UTF_8)
+                    }
+                    file.appendText(line + "\n", Charsets.UTF_8)
+                }
             }
-            file.appendText(line + "\n", Charsets.UTF_8)
         }
     }
 

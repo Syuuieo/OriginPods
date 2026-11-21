@@ -17,6 +17,9 @@ android {
         targetSdk = 36
         versionCode = 105
         versionName = "0.1.5"
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     androidResources {
@@ -64,7 +67,12 @@ android {
     packaging.resources.excludes += listOf(
         "/META-INF/{AL2.0,LGPL2.1}",
         "/META-INF/*.version",
+        "/META-INF/*.kotlin_module",
+        "/META-INF/androidx/**",
         "/META-INF/versions/**",
+        "/META-INF/version-control-info.textproto",
+        "/kotlin/**",
+        "/**/*.kotlin_builtins",
         "/DebugProbesKt.bin",
         "/kotlin-tooling-metadata.json",
     )
@@ -75,14 +83,12 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.foundation)
     implementation(libs.miuix.ui)
     implementation(libs.miuix.preference)
     implementation(libs.miuix.icons)
-    implementation(libs.miuix.blur)
     implementation(libs.kotlinx.coroutines.android)
     compileOnly(libs.libxposed.api)
     implementation(libs.libxposed.service)

@@ -27,12 +27,21 @@ class VivoTwsHook(
 ) : ProcessHook {
 
     private val cachedStates = ConcurrentHashMap<String, RemotePodState>()
+    private val supportedNameCache = ConcurrentHashMap<String, Boolean>()
     @Volatile
     private var appContext: Context? = null
     @Volatile
     private var capturedModel: Int = 0
     @Volatile
     private var activePresenterRef: java.lang.ref.WeakReference<Any>? = null
+    @Volatile
+    private var cachedGson: Any? = null
+    @Volatile
+    private var cachedFromJson: java.lang.reflect.Method? = null
+    @Volatile
+    private var cachedYMethod: java.lang.reflect.Method? = null
+    @Volatile
+    private var cachedStatusClass: Class<*>? = null
 
     override fun install() {
         Handler(Looper.getMainLooper()).postDelayed({
@@ -77,10 +86,12 @@ class VivoTwsHook(
 
     private fun isSupportedOppoName(name: String?): Boolean {
         if (name.isNullOrEmpty()) return false
-        val adapter = EarbudAdapterRegistry.resolve(
-            EarbudIdentity(address = "00:00:00:00:00:00", deviceName = name),
-        ) ?: return false
-        return adapter.id != StandardEarbudAdapter.ID
+        return supportedNameCache.getOrPut(name) {
+            val adapter = EarbudAdapterRegistry.resolve(
+                EarbudIdentity(address = "00:00:00:00:00:00", deviceName = name),
+            )
+            adapter != null && adapter.id != StandardEarbudAdapter.ID
+        }
     }
 
     private fun hookVivoBluetoothUtils() {
@@ -543,15 +554,19 @@ class VivoTwsHook(
                 val bean = presenter.javaClass.getMethod("E").invoke(presenter) ?: return@post
                 val device = bean.javaClass.getMethod("getDevice").invoke(bean) as? BluetoothDevice ?: return@post
                 if (!device.address.equals(mac, ignoreCase = true)) return@post
-                val yMethod = presenter.javaClass.declaredMethods.firstOrNull {
+                val yMethod = cachedYMethod ?: presenter.javaClass.declaredMethods.firstOrNull {
                     it.name == "Y" && it.parameterCount == 1
+                }?.apply { isAccessible = true }?.also {
+                    cachedYMethod = it
+                    cachedStatusClass = it.parameterTypes[0]
                 } ?: return@post
-                val statusClass = yMethod.parameterTypes[0]
-                val gsonClass = classLoader.loadClass("com.google.gson.Gson")
-                val gson = gsonClass.getDeclaredConstructor().newInstance()
-                val statusObj = gsonClass.getMethod("fromJson", String::class.java, Class::class.java)
-                    .invoke(gson, buildEarbudStatusJson(state), statusClass) ?: return@post
-                yMethod.isAccessible = true
+                val statusClass = cachedStatusClass ?: return@post
+                val gson = cachedGson ?: classLoader.loadClass("com.google.gson.Gson")
+                    .getDeclaredConstructor().newInstance().also { cachedGson = it }
+                val fromJson = cachedFromJson ?: gson.javaClass
+                    .getMethod("fromJson", String::class.java, Class::class.java)
+                    .also { cachedFromJson = it }
+                val statusObj = fromJson.invoke(gson, buildEarbudStatusJson(state), statusClass) ?: return@post
                 yMethod.invoke(presenter, statusObj)
                 module.log(Log.INFO, TAG, "pushed battery to HomePresenter mac=$mac L=${state.left} R=${state.right} B=${state.box}")
             }.onFailure {
