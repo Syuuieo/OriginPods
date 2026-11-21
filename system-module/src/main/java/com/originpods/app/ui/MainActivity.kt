@@ -12,8 +12,10 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,6 +43,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -53,7 +56,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,7 +69,10 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.originpods.app.BuildConfig
 import com.originpods.app.hook.OriginPodsXposedEntry
+import com.originpods.app.runtime.LogEntry
+import com.originpods.app.runtime.LogLevel
 import com.originpods.app.runtime.OriginDeviceSessionManager
+import com.originpods.app.runtime.OriginLogStore
 import com.originpods.integration.BatteryFeatureState
 import com.originpods.integration.EarbudAdapterRegistry
 import com.originpods.integration.FirmwareFeatureState
@@ -73,6 +82,9 @@ import com.originpods.integration.OppoModelCatalog
 import com.originpods.integration.OppoModelSpec
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -96,8 +108,12 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Check
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Close
+import top.yukonga.miuix.kmp.icon.extended.Copy
+import top.yukonga.miuix.kmp.icon.extended.Delete
+import top.yukonga.miuix.kmp.icon.extended.FileDownloads
 import top.yukonga.miuix.kmp.icon.extended.Home
 import top.yukonga.miuix.kmp.icon.extended.Info
+import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Search
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -152,6 +168,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        OriginLogStore.init(this)
         enableEdgeToEdge()
         if (!receiverRegistered) {
             registerReceiver(
@@ -228,6 +245,7 @@ private enum class TopDestination(val label: String) {
 
 private enum class SecondaryPage {
     SUPPORTED_DEVICES,
+    LOGS,
     ABOUT,
 }
 
@@ -240,6 +258,10 @@ private fun OriginPodsApp(
     when (secondaryPage) {
         SecondaryPage.SUPPORTED_DEVICES -> {
             SupportedDevicesScreen(onBack = { secondaryPage = null })
+            return
+        }
+        SecondaryPage.LOGS -> {
+            LogViewerScreen(onBack = { secondaryPage = null })
             return
         }
         SecondaryPage.ABOUT -> {
@@ -284,6 +306,7 @@ private fun OriginPodsApp(
                 TopDestination.SETTINGS -> SettingsTab(
                     onRefresh = onRefreshRequested,
                     onOpenSupportedDevices = { secondaryPage = SecondaryPage.SUPPORTED_DEVICES },
+                    onOpenLogs = { secondaryPage = SecondaryPage.LOGS },
                     onOpenAbout = { secondaryPage = SecondaryPage.ABOUT },
                     bottomPadding = innerPadding.calculateBottomPadding(),
                 )
@@ -738,6 +761,7 @@ private sealed interface UpdateState {
 private fun SettingsTab(
     onRefresh: () -> Unit,
     onOpenSupportedDevices: () -> Unit,
+    onOpenLogs: () -> Unit,
     onOpenAbout: () -> Unit,
     bottomPadding: Dp,
 ) {
@@ -836,6 +860,11 @@ private fun SettingsTab(
                             title = "支持的设备",
                             summary = "查看与搜索已适配的 $modelCount 款 OPPO / 一加 / realme 耳机",
                             onClick = onOpenSupportedDevices,
+                        )
+                        ArrowPreference(
+                            title = "运行日志",
+                            summary = "查看跨进程 Hook 日志、报错堆栈与导出诊断文件",
+                            onClick = onOpenLogs,
                         )
                         ArrowPreference(
                             title = "LSPosed 推荐作用域",
@@ -1311,5 +1340,285 @@ private fun AboutScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LogViewerScreen(
+    onBack: () -> Unit,
+) {
+    BackHandler(onBack = onBack)
+
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+    val scrollBehavior = MiuixScrollBehavior()
+    val entries by OriginLogStore.entries.collectAsState()
+    val captureSource by OriginLogStore.lastCaptureSource.collectAsState()
+
+    var query by remember { mutableStateOf("") }
+    var errorsOnly by remember { mutableStateOf(false) }
+    var capturing by remember { mutableStateOf(false) }
+
+    val filtered = remember(entries, query, errorsOnly) {
+        val needle = query.trim().lowercase()
+        entries.asReversed().filter { entry ->
+            val levelOk = !errorsOnly || entry.level == LogLevel.WARN || entry.level == LogLevel.ERROR
+            val queryOk = needle.isEmpty() ||
+                entry.tag.lowercase().contains(needle) ||
+                entry.message.lowercase().contains(needle) ||
+                entry.source.lowercase().contains(needle)
+            levelOk && queryOk
+        }
+    }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain"),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val text = OriginLogStore.buildExportText(context, filtered.asReversed())
+        val ok = runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { out ->
+                out.write(text.toByteArray(Charsets.UTF_8))
+            }
+            true
+        }.getOrDefault(false)
+        Toast.makeText(
+            context,
+            if (ok) "已导出 ${filtered.size} 条日志" else "日志导出失败",
+            Toast.LENGTH_SHORT,
+        ).show()
+    }
+
+    fun refreshLogs() {
+        if (capturing) return
+        capturing = true
+        scope.launch {
+            OriginLogStore.captureSystemLogs(context)
+            capturing = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        refreshLogs()
+    }
+
+    Scaffold(
+        topBar = {
+            SmallTopAppBar(
+                title = "运行日志 (${filtered.size})",
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = MiuixIcons.Back,
+                            contentDescription = "返回",
+                            tint = MiuixTheme.colorScheme.onSurface,
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = ::refreshLogs) {
+                        Icon(
+                            imageVector = MiuixIcons.Refresh,
+                            contentDescription = "刷新系统日志",
+                            tint = MiuixTheme.colorScheme.onSurface,
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            val ts = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+                            exportLauncher.launch("OriginPods-logs-$ts.txt")
+                        },
+                    ) {
+                        Icon(
+                            imageVector = MiuixIcons.FileDownloads,
+                            contentDescription = "导出日志",
+                            tint = MiuixTheme.colorScheme.onSurface,
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            OriginLogStore.clear(context)
+                            Toast.makeText(context, "已清空本地日志", Toast.LENGTH_SHORT).show()
+                        },
+                    ) {
+                        Icon(
+                            imageVector = MiuixIcons.Delete,
+                            contentDescription = "清空日志",
+                            tint = MiuixTheme.colorScheme.onSurface,
+                        )
+                    }
+                },
+                scrollBehavior = scrollBehavior,
+            )
+        },
+    ) { pagePadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = pagePadding.calculateTopPadding()),
+        ) {
+            TextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                label = "筛选标签、报错或关键词",
+                useLabelAsPlaceholder = true,
+                singleLine = true,
+                leadingIcon = {
+                    Icon(
+                        imageVector = MiuixIcons.Search,
+                        contentDescription = null,
+                        modifier = Modifier.padding(start = 12.dp).size(18.dp),
+                        tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                },
+                trailingIcon = if (query.isNotEmpty()) {
+                    {
+                        IconButton(onClick = { query = "" }) {
+                            Icon(
+                                imageVector = MiuixIcons.Close,
+                                contentDescription = "清除",
+                                modifier = Modifier.size(18.dp),
+                                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                        }
+                    }
+                } else {
+                    null
+                },
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    text = if (errorsOnly) "仅 W/E" else "全部级别",
+                    onClick = { errorsOnly = !errorsOnly },
+                    colors = if (errorsOnly) {
+                        ButtonDefaults.textButtonColorsPrimary()
+                    } else {
+                        ButtonDefaults.textButtonColors()
+                    },
+                )
+                TextButton(
+                    text = "复制日志",
+                    onClick = {
+                        val text = OriginLogStore.buildExportText(context, filtered.asReversed())
+                        clipboard.setText(AnnotatedString(text))
+                        Toast.makeText(context, "已复制 ${filtered.size} 条日志", Toast.LENGTH_SHORT).show()
+                    },
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = if (capturing) "正在抓取..." else captureSource,
+                    fontSize = 11.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .nestedScroll(scrollBehavior.nestedScrollConnection),
+                contentPadding = PaddingValues(
+                    start = 12.dp,
+                    end = 12.dp,
+                    top = 4.dp,
+                    bottom = pagePadding.calculateBottomPadding() + 16.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (filtered.isEmpty()) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            insideMargin = PaddingValues(18.dp),
+                        ) {
+                            Text(
+                                text = if (capturing) "正在读取系统日志..." else "暂无匹配的日志记录",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MiuixTheme.colorScheme.onSurface,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "可点击右上角刷新按钮抓取 Root 系统 Logcat，或取消「仅 W/E」筛选。",
+                                fontSize = 12.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                        }
+                    }
+                } else {
+                    items(filtered, key = { it.id }) { entry ->
+                        LogEntryCard(entry)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LogEntryCard(entry: LogEntry) {
+    val (levelBg, levelFg) = when (entry.level) {
+        LogLevel.ERROR -> Color(0xFFFF3B30).copy(alpha = 0.14f) to Color(0xFFD92D20)
+        LogLevel.WARN -> Color(0xFFFF9F0A).copy(alpha = 0.16f) to Color(0xFFB54708)
+        LogLevel.INFO -> MiuixTheme.colorScheme.primary.copy(alpha = 0.12f) to MiuixTheme.colorScheme.primary
+        LogLevel.DEBUG -> MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.12f) to MiuixTheme.colorScheme.onSurfaceVariantSummary
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        insideMargin = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(levelBg)
+                    .padding(horizontal = 7.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    text = entry.level.shortLabel,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = levelFg,
+                )
+            }
+            Text(
+                text = entry.tag,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MiuixTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${entry.timestamp} · ${entry.source}",
+                fontSize = 10.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = entry.message,
+            fontSize = 11.sp,
+            lineHeight = 16.sp,
+            fontFamily = FontFamily.Monospace,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
     }
 }

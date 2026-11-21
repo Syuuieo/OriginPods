@@ -47,6 +47,7 @@ class OriginPodsXposedEntry : XposedModule() {
         const val PKG_CONNECT_CENTER_SYSUI = "com.vivo.connbase.sysui"
         const val ACTION_STATE_CHANGED = "com.originpods.app.ACTION_STATE_CHANGED"
         const val ACTION_CONTROL = "com.originpods.app.ACTION_CONTROL"
+        const val ACTION_LOG = "com.originpods.app.ACTION_LOG"
     }
 }
 

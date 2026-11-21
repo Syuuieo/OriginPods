@@ -15,8 +15,8 @@ android {
         applicationId = "com.originpods.app"
         minSdk = 33
         targetSdk = 36
-        versionCode = 104
-        versionName = "0.1.4"
+        versionCode = 105
+        versionName = "0.1.5"
     }
 
     androidResources {
