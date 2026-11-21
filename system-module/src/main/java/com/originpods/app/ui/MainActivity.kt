@@ -773,6 +773,25 @@ private fun SettingsTab(
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
     var showUpdateDialog by remember { mutableStateOf(false) }
 
+    val quickExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain"),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val allEntries = OriginLogStore.entries.value
+        val text = OriginLogStore.buildExportText(context, allEntries)
+        val ok = runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { out ->
+                out.write(text.toByteArray(Charsets.UTF_8))
+            }
+            true
+        }.getOrDefault(false)
+        Toast.makeText(
+            context,
+            if (ok) "已导出 ${allEntries.size} 条日志" else "日志导出失败",
+            Toast.LENGTH_SHORT,
+        ).show()
+    }
+
     val launcherAlias = remember(context) {
         ComponentName(context, "com.originpods.app.ui.LauncherAlias")
     }
@@ -865,6 +884,17 @@ private fun SettingsTab(
                             title = "运行日志",
                             summary = "查看跨进程 Hook 日志、报错堆栈与导出诊断文件",
                             onClick = onOpenLogs,
+                        )
+                        ArrowPreference(
+                            title = "一键导出日志",
+                            summary = "自动抓取系统日志并保存为 .txt 文件",
+                            onClick = {
+                                scope.launch {
+                                    OriginLogStore.captureSystemLogs(context)
+                                    val ts = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+                                    quickExportLauncher.launch("OriginPods-logs-$ts.txt")
+                                }
+                            },
                         )
                         ArrowPreference(
                             title = "LSPosed 推荐作用域",
@@ -1513,6 +1543,14 @@ private fun LogViewerScreen(
                         val text = OriginLogStore.buildExportText(context, filtered.asReversed())
                         clipboard.setText(AnnotatedString(text))
                         Toast.makeText(context, "已复制 ${filtered.size} 条日志", Toast.LENGTH_SHORT).show()
+                    },
+                )
+                TextButton(
+                    text = "导出 .txt",
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    onClick = {
+                        val ts = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+                        exportLauncher.launch("OriginPods-logs-$ts.txt")
                     },
                 )
                 Spacer(Modifier.weight(1f))
