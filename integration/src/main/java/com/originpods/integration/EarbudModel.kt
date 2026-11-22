@@ -169,6 +169,57 @@ enum class AdapterResolution {
     STANDARD_FALLBACK,
 }
 
+enum class HeadsetFormFactor {
+    TWS,
+    HEADPHONES,
+    OVER_EAR,
+    NECKBAND,
+}
+
+enum class InitialProtocolFailureResolution {
+    KeepDormant,
+    FallbackToStandard,
+}
+
+data class MiLinkCardPresentationId(val value: String)
+
+sealed interface TelemetryQuery {
+    data object RefreshAll : TelemetryQuery
+    data class RefreshFeature(val featureId: String) : TelemetryQuery
+}
+
+enum class FeatureReportDecision {
+    ACCEPT,
+    HOLD,
+}
+
+interface AdapterEventScope {
+    fun requestState(featureId: String, delayMs: Long)
+    fun cancelStateRequest(featureId: String)
+}
+
+interface AdapterRuntimeState {
+    val adapterId: String
+}
+
+enum class EarbudCapabilities {
+    BATTERY,
+    NOISE_MODE,
+}
+
+interface DeviceFeatureStateContract {
+    val featureIds: Set<String>
+    fun acceptsState(state: DeviceFeatureState): Boolean
+    fun acceptsRequest(request: ControlRequest): Boolean
+    fun readback(featureId: String): List<ByteArray> = emptyList()
+}
+
+object EmptyDeviceFeatureStateContract : DeviceFeatureStateContract {
+    override val featureIds: Set<String> = emptySet()
+    override fun acceptsState(state: DeviceFeatureState): Boolean = false
+    override fun acceptsRequest(request: ControlRequest): Boolean = false
+}
+
 enum class TransportReadiness {
     SYSTEM_ONLY,
     PROTOCOL_HANDSHAKE,
@@ -188,14 +239,34 @@ sealed interface RfcommEndpointSpec : EarbudTransportSpec {
         val uuid: String,
         override val id: String = "rfcomm-$uuid",
     ) : RfcommEndpointSpec
+
+    data class Channel(
+        val number: Int,
+        val secure: Boolean = true,
+        override val id: String = "rfcomm-$number${if (secure) "" else "-insecure"}",
+    ) : RfcommEndpointSpec
 }
+
+data class L2capEndpointSpec(
+    val psm: Int,
+    val serviceUuid: String,
+    val authenticated: Boolean = true,
+    val encrypted: Boolean = true,
+    override val id: String = "l2cap-${psm.toString(16)}",
+) : EarbudTransportSpec
 
 data class EarbudIdentity(
     val address: String,
     val deviceName: String?,
     val standardHeadset: Boolean = true,
     val nativeSystemEarbud: Boolean = false,
-)
+    val serviceUuids: List<String> = emptyList(),
+    val majorDeviceClass: Int? = null,
+    val deviceClass: Int? = null,
+) {
+    val deviceAddress: String get() = address
+    val bluetoothDeviceClass: Int? get() = deviceClass
+}
 
 sealed interface ControlRequest {
     data object Refresh : ControlRequest
@@ -207,6 +278,8 @@ sealed interface ControlRequest {
 
 sealed interface ProtocolEvent {
     data object HandshakeAccepted : ProtocolEvent
+    data object HandshakeRejected : ProtocolEvent
+    data class ProductIdentified(val productId: Int) : ProtocolEvent
     data class CapabilitiesIdentified(
         val battery: Boolean,
         val noiseModes: Set<NoiseMode> = emptySet(),
@@ -223,8 +296,14 @@ sealed interface ProtocolEvent {
 interface ProtocolSession {
     fun initialReadCommands(): List<ByteArray>
     fun encode(request: ControlRequest): List<ByteArray>
-    fun readback(request: ControlRequest): List<ByteArray>
-    fun followUpCommands(event: ProtocolEvent): List<ByteArray>
+    fun readback(request: ControlRequest): List<ByteArray> = emptyList()
+    fun readback(featureId: String): List<ByteArray> = emptyList()
+    fun query(query: TelemetryQuery): List<ByteArray> = when (query) {
+        TelemetryQuery.RefreshAll -> encode(ControlRequest.Refresh)
+        is TelemetryQuery.RefreshFeature -> readback(query.featureId)
+    }
+    fun followUpCommands(event: ProtocolEvent): List<ByteArray> = emptyList()
+    fun drainImmediateCommands(): List<ByteArray> = emptyList()
     fun offer(bytes: ByteArray): List<ProtocolEvent>
     fun reset()
 }

@@ -9,10 +9,22 @@ abstract class EarbudAdapter {
     open val transportReadiness: TransportReadiness = TransportReadiness.SYSTEM_ONLY
     open val supportedNoiseModes: Set<NoiseMode> = emptySet()
     open val transports: List<EarbudTransportSpec> = emptyList()
+    open val formFactor: HeadsetFormFactor = HeadsetFormFactor.TWS
+    open val featureStateContract: DeviceFeatureStateContract = EmptyDeviceFeatureStateContract
+    open val miLinkPresentationId: MiLinkCardPresentationId? = null
 
     abstract fun matches(identity: EarbudIdentity): Boolean
 
     open fun createProtocolSession(): ProtocolSession? = null
+
+    open fun onInitialProtocolUnavailable(): InitialProtocolFailureResolution =
+        InitialProtocolFailureResolution.KeepDormant
+
+    open fun handleBatteryReport(battery: EarbudBattery, scope: AdapterEventScope): FeatureReportDecision =
+        FeatureReportDecision.ACCEPT
+
+    open fun handleNoiseModeReport(mode: NoiseMode, scope: AdapterEventScope): FeatureReportDecision =
+        FeatureReportDecision.ACCEPT
 }
 
 open class StandardEarbudAdapter : EarbudAdapter() {

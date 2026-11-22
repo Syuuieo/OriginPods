@@ -71,7 +71,9 @@ OriginPods 是面向 **vivo OriginOS（支持 OriginOS 6 / OriginOS 7）** 的�
 
 ## 致谢
 
-- **[HyperEars](https://github.com/silverpoetry/HyperEars)**：OriginPods 的整体模块架构、协议/适配器分层设计、蓝牙单会话桥接思路以及 Miuix 前端界面风格均参考自 HyperEars，在此致以诚挚感谢！
+详细致谢与协议参考清单见 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)：
+
+- **[HyperEars](https://github.com/silverpoetry/HyperEars)**：OriginPods 的整体模块架构、协议/适配器分层设计、蓝牙单会话桥接思路及多品牌协议实现均参考自 HyperEars，在此致以诚挚感谢！
 - **[OppoPods](https://github.com/Leaf-lsgtky/OppoPods)**：参考 OPPO / 一加 / realme 设备白名单目录与协议字段解析，实现全系适配。
-- **[Miuix](https://github.com/compose-miuix-ui/miuix)**：为模块提供流畅的 Compose UI 组件库。
+- **[COUI-Kit](https://github.com/ItosEO/COUI-Kit)**：为模块提供 ColorOS 风格 Compose UI 组件库。
 - **[libxposed](https://github.com/libxposed/api)**：提供现代化的 Xposed API 101+ 模块开发接口。

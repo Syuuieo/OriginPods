@@ -15,8 +15,8 @@ android {
         applicationId = "com.originpods.app"
         minSdk = 33
         targetSdk = 36
-        versionCode = 105
-        versionName = "0.1.5"
+        versionCode = 200
+        versionName = "0.2.0"
         ndk {
             abiFilters += "arm64-v8a"
         }
@@ -86,9 +86,8 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.foundation)
-    implementation(libs.miuix.ui)
-    implementation(libs.miuix.preference)
-    implementation(libs.miuix.icons)
+    implementation(libs.coui)
+    implementation(libs.coui.icons)
     implementation(libs.kotlinx.coroutines.android)
     compileOnly(libs.libxposed.api)
     implementation(libs.libxposed.service)

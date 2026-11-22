@@ -1,12 +1,17 @@
 package com.originpods.app.runtime
 
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
+import android.os.ParcelUuid
 import android.util.Log
 import com.originpods.integration.ControlRequest
+import com.originpods.integration.EarbudTransportSpec
+import com.originpods.integration.L2capEndpointSpec
 import com.originpods.integration.ProtocolEvent
 import com.originpods.integration.ProtocolSession
+import com.originpods.integration.RfcommEndpointSpec
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,15 +21,16 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.IOException
+import java.lang.reflect.InvocationTargetException
 import java.util.UUID
 import java.util.concurrent.LinkedBlockingQueue
 
 /**
- * Manages a single Bluetooth Classic RFCOMM socket connection for a [ProtocolSession].
+ * Manages a single Bluetooth Classic RFCOMM or BR/EDR L2CAP socket connection for a [ProtocolSession].
  */
 class RfcommTransport(
     val device: BluetoothDevice,
-    private val serviceUuid: String,
+    private val endpoint: EarbudTransportSpec,
     private val session: ProtocolSession,
     private val onEvents: (List<ProtocolEvent>) -> Unit,
     private val onClosed: (() -> Unit)? = null,
@@ -48,11 +54,21 @@ class RfcommTransport(
         ioJob = scope.launch {
             var writer: Job? = null
             try {
-                val uuid = UUID.fromString(serviceUuid)
-                val rfcomm = device.createRfcommSocketToServiceRecord(uuid)
+                val rfcomm = when (endpoint) {
+                    is RfcommEndpointSpec.ServiceUuid -> {
+                        val uuid = UUID.fromString(endpoint.uuid)
+                        device.createRfcommSocketToServiceRecord(uuid)
+                    }
+                    is RfcommEndpointSpec.Channel -> {
+                        val methodName = if (endpoint.secure) "createRfcommSocket" else "createInsecureRfcommSocket"
+                        device.javaClass.getMethod(methodName, Int::class.javaPrimitiveType)
+                            .invoke(device, endpoint.number) as BluetoothSocket
+                    }
+                    is L2capEndpointSpec -> createL2capSocket(device, endpoint)
+                }
                 socket = rfcomm
                 rfcomm.connect()
-                Log.i(TAG, "RFCOMM connected to ${device.address} ($serviceUuid)")
+                Log.i(TAG, "RFCOMM connected to ${device.address} (${endpoint.id})")
 
                 val output = rfcomm.outputStream
                 val input = rfcomm.inputStream
@@ -112,6 +128,95 @@ class RfcommTransport(
         scope.cancel()
     }
 
+    private fun createL2capSocket(
+        device: BluetoothDevice,
+        endpoint: L2capEndpointSpec,
+    ): BluetoothSocket {
+        val uuid = ParcelUuid.fromString(endpoint.serviceUuid)
+        @Suppress("DEPRECATION")
+        val adapter = BluetoothAdapter.getDefaultAdapter()
+        val candidates = buildList {
+            if (adapter != null) {
+                add(
+                    arrayOf<Any>(
+                        adapter,
+                        device,
+                        BLUETOOTH_SOCKET_TYPE_L2CAP,
+                        endpoint.authenticated,
+                        endpoint.encrypted,
+                        endpoint.psm,
+                        uuid,
+                    ),
+                )
+            }
+            add(
+                arrayOf<Any>(
+                    device,
+                    BLUETOOTH_SOCKET_TYPE_L2CAP,
+                    endpoint.authenticated,
+                    endpoint.encrypted,
+                    endpoint.psm,
+                    uuid,
+                ),
+            )
+            add(
+                arrayOf<Any>(
+                    device,
+                    BLUETOOTH_SOCKET_TYPE_L2CAP,
+                    INVALID_FILE_DESCRIPTOR,
+                    endpoint.authenticated,
+                    endpoint.encrypted,
+                    endpoint.psm,
+                    uuid,
+                ),
+            )
+            add(
+                arrayOf<Any>(
+                    BLUETOOTH_SOCKET_TYPE_L2CAP,
+                    INVALID_FILE_DESCRIPTOR,
+                    endpoint.authenticated,
+                    endpoint.encrypted,
+                    device,
+                    endpoint.psm,
+                    uuid,
+                ),
+            )
+            add(
+                arrayOf<Any>(
+                    BLUETOOTH_SOCKET_TYPE_L2CAP,
+                    endpoint.authenticated,
+                    endpoint.encrypted,
+                    device,
+                    endpoint.psm,
+                    uuid,
+                ),
+            )
+        }
+        candidates.forEach { args ->
+            val paramTypes = args.map { arg ->
+                when (arg) {
+                    is Int -> Int::class.javaPrimitiveType!!
+                    is Boolean -> Boolean::class.javaPrimitiveType!!
+                    is BluetoothAdapter -> BluetoothAdapter::class.java
+                    is BluetoothDevice -> BluetoothDevice::class.java
+                    is ParcelUuid -> ParcelUuid::class.java
+                    else -> arg.javaClass
+                }
+            }.toTypedArray()
+            val constructor = try {
+                BluetoothSocket::class.java.getDeclaredConstructor(*paramTypes)
+            } catch (_: NoSuchMethodException) {
+                return@forEach
+            }
+            try {
+                return constructor.apply { isAccessible = true }.newInstance(*args) as BluetoothSocket
+            } catch (error: InvocationTargetException) {
+                throw error.cause ?: error
+            }
+        }
+        throw NoSuchMethodException("No supported BluetoothSocket L2CAP constructor")
+    }
+
     private fun closeSocket() {
         runCatching { socket?.close() }
         socket = null
@@ -119,5 +224,7 @@ class RfcommTransport(
 
     companion object {
         private const val TAG = "OriginPods.RFCOMM"
+        private const val BLUETOOTH_SOCKET_TYPE_L2CAP = 3
+        private const val INVALID_FILE_DESCRIPTOR = -1
     }
 }

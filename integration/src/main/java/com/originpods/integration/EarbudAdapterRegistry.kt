@@ -14,6 +14,17 @@ object EarbudAdapterRegistry {
         ::OnePlusBuds4Adapter,
         ::OppoEarbudAdapter,
         ::OnePlusEarbudAdapter,
+        ::XiaomiEarbudAdapter,
+        ::HuaweiEarbudAdapter,
+        ::HonorEarbudAdapter,
+        ::SonyEarbudAdapter,
+        ::SamsungEarbudAdapter,
+        ::BoseEarbudAdapter,
+        ::EdifierEarbudAdapter,
+        ::MoondropEarbudAdapter,
+        ::QcyEarbudAdapter,
+        ::RoseEarbudAdapter,
+        ::TechnicsEarbudAdapter,
         ::StandardEarbudAdapter,
     )
 

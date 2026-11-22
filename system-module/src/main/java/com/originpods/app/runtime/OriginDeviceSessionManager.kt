@@ -8,6 +8,7 @@ import com.originpods.integration.DeviceFeatureSnapshot
 import com.originpods.integration.EarbudAdapter
 import com.originpods.integration.EarbudAdapterRegistry
 import com.originpods.integration.EarbudIdentity
+import com.originpods.integration.L2capEndpointSpec
 import com.originpods.integration.NoiseMode
 import com.originpods.integration.ProtocolEvent
 import com.originpods.integration.RfcommEndpointSpec
@@ -41,9 +42,14 @@ object OriginDeviceSessionManager {
         if (existing != null && existing.isRunning) return
         existing?.stop()
 
+        val uuids = runCatching { device.uuids?.map { it.uuid.toString() } }.getOrNull().orEmpty()
+        val btClass = runCatching { device.bluetoothClass }.getOrNull()
         val identity = EarbudIdentity(
             address = address,
             deviceName = runCatching { device.name }.getOrNull(),
+            serviceUuids = uuids,
+            majorDeviceClass = btClass?.majorDeviceClass,
+            deviceClass = btClass?.deviceClass,
         )
         val adapter = EarbudAdapterRegistry.resolve(identity, disabledAdapterIds) ?: return
         Log.i(TAG, "matched ${identity.deviceName} ($address) -> ${adapter.id}")
@@ -53,12 +59,13 @@ object OriginDeviceSessionManager {
         )
 
         val session = adapter.createProtocolSession() ?: return
-        val endpoint = adapter.transports.filterIsInstance<RfcommEndpointSpec.ServiceUuid>().firstOrNull()
-            ?: return
+        val endpoint = adapter.transports.firstOrNull {
+            it is RfcommEndpointSpec || it is L2capEndpointSpec
+        } ?: return
 
         val transport = RfcommTransport(
             device = device,
-            serviceUuid = endpoint.uuid,
+            endpoint = endpoint,
             session = session,
             onEvents = { events -> handleEvents(address, events) },
         )
@@ -104,6 +111,10 @@ object OriginDeviceSessionManager {
                 ProtocolEvent.HandshakeAccepted -> {
                     updated = updated.copy(handshakeAccepted = true)
                 }
+                ProtocolEvent.HandshakeRejected -> {
+                    updated = updated.copy(handshakeAccepted = false)
+                }
+                is ProtocolEvent.ProductIdentified -> Unit
                 is ProtocolEvent.CapabilitiesIdentified -> {
                     if (event.noiseModes.isNotEmpty()) {
                         updated = updated.copy(supportedNoiseModes = event.noiseModes)

@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -19,54 +20,87 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.itos.coui.dialog.CouiDialogAction
+import com.itos.coui.dialog.CouiDialogActionColors
+import com.itos.coui.dialog.CouiDialogActionStyle
+import com.itos.coui.dialog.Dialog
+import com.itos.coui.effect.couiButtonFeedback
+import com.itos.coui.icons.CouiIcons
+import com.itos.coui.layout.CouiPageDefaults
+import com.itos.coui.layout.Divider
+import com.itos.coui.layout.Group
+import com.itos.coui.layout.Item
+import com.itos.coui.layout.Scaffold
+import com.itos.coui.navigation.CouiNavigationItem
+import com.itos.coui.navigation.NavigationBar
+import com.itos.coui.switch.Switch
+import com.itos.coui.text.CouiTextKind
+import com.itos.coui.text.Text
+import com.itos.coui.theme.CouiTheme
+import com.itos.coui.theme.LocalCouiTextStyle
+import com.itos.coui.topappbar.CouiTopAppBarDefaults
+import com.itos.coui.topappbar.LargeTopAppBar
+import com.itos.coui.topappbar.TopAppBar
+import com.itos.coui.topappbar.TopAppBarButton
+import com.itos.coui.topappbar.TopAppBarButtonGroup
 import com.originpods.app.BuildConfig
 import com.originpods.app.hook.OriginPodsXposedEntry
 import com.originpods.app.runtime.LogEntry
@@ -89,40 +123,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.CardDefaults
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.NavigationBar
-import top.yukonga.miuix.kmp.basic.NavigationBarItem
-import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.SmallTopAppBar
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.TextField
-import top.yukonga.miuix.kmp.basic.TopAppBar
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.basic.Check
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.Close
-import top.yukonga.miuix.kmp.icon.extended.Copy
-import top.yukonga.miuix.kmp.icon.extended.Delete
-import top.yukonga.miuix.kmp.icon.extended.FileDownloads
-import top.yukonga.miuix.kmp.icon.extended.Home
-import top.yukonga.miuix.kmp.icon.extended.Info
-import top.yukonga.miuix.kmp.icon.extended.Refresh
-import top.yukonga.miuix.kmp.icon.extended.Search
-import top.yukonga.miuix.kmp.icon.extended.Settings
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.theme.ColorSchemeMode
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.theme.ThemeController
-import top.yukonga.miuix.kmp.utils.PressFeedbackType
-import top.yukonga.miuix.kmp.window.WindowDialog
 
 data class RemoteTelemetryUi(
     val mac: String,
@@ -181,11 +181,17 @@ class MainActivity : ComponentActivity() {
         ensureBluetoothPermissionAndScan()
 
         setContent {
-            val controller = remember { ThemeController(ColorSchemeMode.System) }
-            MiuixTheme(controller = controller) {
+            CouiTheme {
                 OriginPodsApp(
                     remoteStates = remoteStates,
-                    onRefreshRequested = ::ensureBluetoothPermissionAndScan,
+                    onRefreshRequested = {
+                        ensureBluetoothPermissionAndScan()
+                        sendBroadcast(
+                            Intent(OriginPodsXposedEntry.ACTION_CONTROL).apply {
+                                putExtra("request_state", true)
+                            },
+                        )
+                    },
                 )
             }
         }
@@ -193,32 +199,25 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         if (receiverRegistered) {
-            unregisterReceiver(stateReceiver)
+            runCatching { unregisterReceiver(stateReceiver) }
             receiverRegistered = false
         }
         super.onDestroy()
     }
 
     private fun ensureBluetoothPermissionAndScan() {
-        sendBroadcast(
-            Intent(OriginPodsXposedEntry.ACTION_CONTROL).apply {
-                putExtra("request_state", true)
-            },
-        )
-        val granted = ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.BLUETOOTH_CONNECT,
-        ) == PackageManager.PERMISSION_GRANTED
-        if (!granted) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            scanConnectedHeadsets()
+        } else {
             permissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
-            return
         }
-        scanConnectedHeadsets()
     }
 
     private fun scanConnectedHeadsets() {
         val manager = getSystemService(BluetoothManager::class.java) ?: return
-        val adapter: BluetoothAdapter = manager.adapter ?: return
+        val adapter = manager.adapter ?: return
         adapter.getProfileProxy(
             this,
             object : BluetoothProfile.ServiceListener {
@@ -236,11 +235,6 @@ class MainActivity : ComponentActivity() {
             BluetoothProfile.A2DP,
         )
     }
-}
-
-private enum class TopDestination(val label: String) {
-    DASHBOARD("主页"),
-    SETTINGS("设置"),
 }
 
 private enum class SecondaryPage {
@@ -271,61 +265,139 @@ private fun OriginPodsApp(
         null -> Unit
     }
 
-    val pagerState = rememberPagerState(pageCount = { TopDestination.entries.size })
-    val scope = rememberCoroutineScope()
-    val destinations = TopDestination.entries
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    val scrollBehavior = CouiTopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val dark = CouiTheme.isDark
+    val pageColors = CouiPageDefaults.themeColors(dark)
+
+    val navItems = listOf(
+        CouiNavigationItem(
+            title = "主页",
+            icon = CouiIcons.Outlined.Headset,
+            selectedIcon = CouiIcons.Filled.Headset,
+        ),
+        CouiNavigationItem(
+            title = "设置",
+            icon = CouiIcons.Outlined.Setting,
+            selectedIcon = CouiIcons.Filled.Setting,
+        ),
+    )
 
     Scaffold(
-        bottomBar = {
-            NavigationBar {
-                destinations.forEachIndexed { index, dest ->
-                    val icon = when (dest) {
-                        TopDestination.DASHBOARD -> MiuixIcons.Home
-                        TopDestination.SETTINGS -> MiuixIcons.Settings
-                    }
-                    NavigationBarItem(
-                        selected = pagerState.currentPage == index,
-                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                        icon = icon,
-                        label = dest.label,
+        modifier = Modifier
+            .fillMaxSize()
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = pageColors.background,
+        topBar = {
+            LargeTopAppBar(
+                title = {
+                    BasicText(
+                        text = if (selectedTab == 0) "OriginPods" else "设置",
+                        style = LocalCouiTextStyle.current,
                     )
-                }
+                },
+                scrollBehavior = scrollBehavior,
+            )
+        },
+        bottomBar = {
+            if (Build.VERSION.SDK_INT >= 34) {
+                NavigationBar(
+                    items = navItems,
+                    selectedIndex = selectedTab,
+                    onSelection = { selectedTab = it },
+                )
+            } else {
+                FallbackBottomBar(
+                    selectedTab = selectedTab,
+                    onSelect = { selectedTab = it },
+                )
             }
         },
-    ) { innerPadding ->
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize(),
-        ) { page ->
-            when (destinations[page]) {
-                TopDestination.DASHBOARD -> DashboardTab(
-                    remoteStates = remoteStates,
-                    onRefresh = onRefreshRequested,
-                    bottomPadding = innerPadding.calculateBottomPadding(),
-                )
-                TopDestination.SETTINGS -> SettingsTab(
-                    onRefresh = onRefreshRequested,
-                    onOpenSupportedDevices = { secondaryPage = SecondaryPage.SUPPORTED_DEVICES },
-                    onOpenLogs = { secondaryPage = SecondaryPage.LOGS },
-                    onOpenAbout = { secondaryPage = SecondaryPage.ABOUT },
-                    bottomPadding = innerPadding.calculateBottomPadding(),
+    ) { padding ->
+        if (selectedTab == 0) {
+            DashboardContent(
+                remoteStates = remoteStates,
+                onRefresh = onRefreshRequested,
+                onOpenSupportedDevices = { secondaryPage = SecondaryPage.SUPPORTED_DEVICES },
+                contentPadding = padding,
+            )
+        } else {
+            SettingsContent(
+                onRefresh = onRefreshRequested,
+                onOpenSupportedDevices = { secondaryPage = SecondaryPage.SUPPORTED_DEVICES },
+                onOpenLogs = { secondaryPage = SecondaryPage.LOGS },
+                onOpenAbout = { secondaryPage = SecondaryPage.ABOUT },
+                contentPadding = padding,
+            )
+        }
+    }
+}
+
+@Composable
+private fun FallbackBottomBar(
+    selectedTab: Int,
+    onSelect: (Int) -> Unit,
+) {
+    val dark = CouiTheme.isDark
+    val colors = CouiPageDefaults.themeColors(dark)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 24.dp, vertical = 10.dp)
+            .clip(CircleShape)
+            .background(colors.card)
+            .padding(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        listOf("主页", "设置").forEachIndexed { idx, label ->
+            val selected = selectedTab == idx
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(CircleShape)
+                    .background(if (selected) colors.accent.copy(alpha = 0.14f) else Color.Transparent)
+                    .clickable { onSelect(idx) }
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = label,
+                    kind = CouiTextKind.ItemTitle,
+                    color = if (selected) colors.accent else colors.summary,
                 )
             }
         }
     }
 }
 
+private data class SessionCardModel(
+    val mac: String,
+    val name: String,
+    val adapterName: String,
+    val adapterId: String,
+    val handshakeReady: Boolean,
+    val left: Int,
+    val right: Int,
+    val box: Int,
+    val noiseMode: NoiseMode?,
+    val firmware: String?,
+)
+
 @Composable
-private fun DashboardTab(
+private fun DashboardContent(
     remoteStates: Map<String, RemoteTelemetryUi>,
     onRefresh: () -> Unit,
-    bottomPadding: Dp,
+    onOpenSupportedDevices: () -> Unit,
+    contentPadding: PaddingValues,
 ) {
-    val scrollBehavior = MiuixScrollBehavior()
     val activeDevices by OriginDeviceSessionManager.activeDevices.collectAsState()
     val modelCount = remember { OppoModelCatalog.allModels().size }
+    val adapterCount = remember { EarbudAdapterRegistry.catalog().size }
+    val dark = CouiTheme.isDark
+    val colors = CouiPageDefaults.themeColors(dark)
 
-    val mergedSessions = remember(activeDevices, remoteStates.toMap()) {
+    val sessions = remember(activeDevices, remoteStates.toMap()) {
         val map = linkedMapOf<String, SessionCardModel>()
         activeDevices.forEach { (mac, s) ->
             val bat = s.snapshot.get<BatteryFeatureState>()?.battery
@@ -360,387 +432,207 @@ private fun DashboardTab(
         map.values.toList()
     }
 
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            TopAppBar(
-                title = "OriginPods",
-                scrollBehavior = scrollBehavior,
-            )
-        },
-    ) { pagePadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = pagePadding.calculateTopPadding())
-                .nestedScroll(scrollBehavior.nestedScrollConnection),
-            contentPadding = PaddingValues(
-                start = 12.dp,
-                end = 12.dp,
-                top = 12.dp,
-                bottom = bottomPadding + 16.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            item(key = "runtime-status") {
-                RuntimeStatusCard(
-                    sessions = mergedSessions,
-                    modelCount = modelCount,
-                    onRefresh = onRefresh,
-                )
-            }
-            item(key = "runtime-stats") {
-                RuntimeStatsRow(
-                    connectedCount = mergedSessions.size,
-                    handshakeCount = mergedSessions.count { it.handshakeReady },
-                )
-            }
-            item(key = "originos-header") {
-                SmallTitle(text = "OriginOS 集成")
-            }
-            item(key = "originos-details") {
-                OriginIntegrationCard(onRefresh = onRefresh)
-            }
-            item(key = "session-header") {
-                SmallTitle(text = "设备会话 (${mergedSessions.size})")
-            }
-            if (mergedSessions.isEmpty()) {
-                item(key = "empty-sessions") {
-                    EmptySessionsCard()
-                }
-            } else {
-                items(items = mergedSessions, key = { it.mac }) { session ->
-                    ReadonlySessionCard(session = session)
-                }
-            }
-        }
-    }
-}
-
-private data class SessionCardModel(
-    val mac: String,
-    val name: String,
-    val adapterName: String,
-    val adapterId: String,
-    val handshakeReady: Boolean,
-    val left: Int,
-    val right: Int,
-    val box: Int,
-    val noiseMode: NoiseMode?,
-    val firmware: String?,
-)
-
-@Composable
-private fun RuntimeStatusCard(
-    sessions: List<SessionCardModel>,
-    modelCount: Int,
-    onRefresh: () -> Unit,
-) {
-    val ready = sessions.any { it.handshakeReady }
-    val title = if (ready) "运行正常" else "等待设备连接"
-    val summary = if (ready) {
-        "已接管连接中心与系统蓝牙设置，控制由系统原生界面承担"
-    } else {
-        "已内置 $modelCount+ 款 OPPO / 一加 / realme 耳机型号，连接后自动同步"
-    }
-    val dark = isSystemInDarkTheme()
-    val container = when {
-        ready && dark -> Color(0xFF1A3825)
-        ready -> Color(0xFFDFFAE4)
-        dark -> Color(0xFF2C2C2E)
-        else -> Color(0xFFF2F3F5)
-    }
-    val accent = if (ready) Color(0xFF36D167) else MiuixTheme.colorScheme.primary
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.defaultColors(
-            color = container,
-            contentColor = MiuixTheme.colorScheme.onSurface,
-        ),
-        onClick = onRefresh,
-        showIndication = true,
-        pressFeedbackType = PressFeedbackType.Tilt,
-    ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .offset(50.dp, 38.dp),
-                contentAlignment = Alignment.BottomEnd,
-            ) {
-                Icon(
-                    imageVector = if (ready) MiuixIcons.Basic.Check else MiuixIcons.Info,
-                    contentDescription = null,
-                    modifier = Modifier.size(165.dp),
-                    tint = accent.copy(alpha = 0.25f),
-                )
-            }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-            ) {
-                Text(
-                    text = title,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = summary,
-                    fontSize = 14.sp,
-                    color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.78f),
-                )
-                Spacer(Modifier.height(28.dp))
-                Text(
-                    text = "${sessions.size} 个活动会话 · 点击同步状态",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun RuntimeStatsRow(connectedCount: Int, handshakeCount: Int) {
-    Row(
+    LazyColumn(
         modifier = Modifier
-            .fillMaxWidth()
-            .height(IntrinsicSize.Min),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+            .fillMaxSize()
+            .consumeWindowInsets(contentPadding),
+        contentPadding = contentPadding,
     ) {
-        StatCard(
-            label = "活动会话",
-            value = connectedCount,
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-        )
-        StatCard(
-            label = "协议已确认",
-            value = handshakeCount,
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-        )
-    }
-}
-
-@Composable
-private fun StatCard(label: String, value: Int, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier,
-        insideMargin = PaddingValues(16.dp),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                text = label,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            )
-            Text(
-                text = value.toString(),
-                fontSize = 26.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
-    }
-}
-
-@Composable
-private fun OriginIntegrationCard(onRefresh: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onRefresh),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+        item {
+            Group(
+                title = "系统集成概览",
+                footer = "在连接中心卡片、系统蓝牙设置与 VivoTws 详情页内直接操作降噪与查找，无需在模块内手动切换。",
+                colors = colors,
             ) {
-                Text(
-                    text = "系统接管通道",
-                    style = MiuixTheme.textStyles.body1,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = "v${BuildConfig.VERSION_NAME}",
-                    style = MiuixTheme.textStyles.footnote1,
-                    color = MiuixTheme.colorScheme.primary,
-                )
-            }
-            Row(modifier = Modifier.fillMaxWidth()) {
-                IntegrationMetric("蓝牙服务", "RFCOMM", Modifier.weight(1f))
-                IntegrationMetric("连接中心", "卡片/响铃", Modifier.weight(1f))
-                IntegrationMetric("系统设置", "入口识别", Modifier.weight(1f))
-                IntegrationMetric("VivoTws", "原生详情", Modifier.weight(1f))
-            }
-        }
-    }
-}
-
-@Composable
-private fun IntegrationMetric(title: String, value: String, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        Text(
-            text = value,
-            style = MiuixTheme.textStyles.body2,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-        )
-        Text(
-            text = title,
-            style = MiuixTheme.textStyles.footnote2,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            maxLines = 1,
-        )
-    }
-}
-
-@Composable
-private fun EmptySessionsCard() {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                text = "暂无活动设备会话",
-                style = MiuixTheme.textStyles.headline1,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = "受支持耳机连接后在此展示实时遥测状态",
-                style = MiuixTheme.textStyles.body2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            )
-        }
-    }
-}
-
-@Composable
-private fun ReadonlySessionCard(session: SessionCardModel) {
-    val dark = isSystemInDarkTheme()
-    val chipBg = if (dark) Color(0xFF2C2C2E) else Color(0xFFF2F2F2)
-    val pillColor = if (session.handshakeReady) Color(0xFF36D167) else MiuixTheme.colorScheme.secondary
-
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = session.name,
-                        style = MiuixTheme.textStyles.title3,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = "适配器  ${session.adapterName}",
-                        style = MiuixTheme.textStyles.footnote1,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    )
-                    Text(
-                        text = buildString {
-                            append("蓝牙  ${session.mac}")
-                            if (!session.firmware.isNullOrEmpty()) append(" · 固件 ${session.firmware}")
-                        },
-                        style = MiuixTheme.textStyles.footnote1,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(pillColor.copy(alpha = 0.14f))
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                Item(
+                    icon = { CouiIconGlyph(CouiIcons.Filled.Bluetooth, colors.accent) },
+                    summary = {
+                        Text(
+                            text = if (sessions.isNotEmpty()) {
+                                "已接管 ${sessions.size} 台设备 · OriginOS 6 / 7 原生桥接运行中"
+                            } else {
+                                "等待受支持耳机连接 · 点击刷新同步状态"
+                            },
+                            kind = CouiTextKind.ItemSummary,
+                            color = colors.summary,
+                        )
+                    },
+                    onClick = onRefresh,
                 ) {
                     Text(
-                        text = if (session.handshakeReady) "已就绪" else "握手中",
-                        style = MiuixTheme.textStyles.footnote2,
-                        fontWeight = FontWeight.SemiBold,
-                        color = pillColor,
+                        text = if (sessions.isNotEmpty()) "模块运行中" else "模块已就绪",
+                        kind = CouiTextKind.ItemTitle,
+                        color = colors.title,
+                    )
+                }
+                Divider(color = colors.divider)
+                Item(
+                    icon = { CouiIconGlyph(CouiIcons.Filled.Headset, colors.accent) },
+                    summary = {
+                        Text(
+                            text = "$adapterCount 组品牌适配器 · $modelCount 款 OPPO / 一加 / realme 型号",
+                            kind = CouiTextKind.ItemSummary,
+                            color = colors.summary,
+                        )
+                    },
+                    trailing = { CouiIconGlyph(CouiIcons.Filled.Next, colors.summary, 18) },
+                    onClick = onOpenSupportedDevices,
+                ) {
+                    Text(
+                        text = "多品牌支持目录",
+                        kind = CouiTextKind.ItemTitle,
+                        color = colors.title,
                     )
                 }
             }
+        }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                TelemetryTile("左耳", session.left.takeIf { it >= 0 }?.let { "$it%" } ?: "--", chipBg, Modifier.weight(1f))
-                TelemetryTile("右耳", session.right.takeIf { it >= 0 }?.let { "$it%" } ?: "--", chipBg, Modifier.weight(1f))
-                TelemetryTile("充电盒", session.box.takeIf { it >= 0 }?.let { "$it%" } ?: "--", chipBg, Modifier.weight(1f))
-                TelemetryTile("降噪", session.noiseMode?.toDisplayLabel() ?: "--", chipBg, Modifier.weight(1f))
+        if (sessions.isEmpty()) {
+            item {
+                Group(
+                    title = "当前设备",
+                    colors = colors,
+                ) {
+                    Item(
+                        icon = { CouiIconGlyph(CouiIcons.Outlined.Headset, colors.summary) },
+                        summary = {
+                            Text(
+                                text = "支持 OPPO / 一加 / realme、华为、荣耀、Sony、三星、Bose、漫步者、水月雨、QCY、弱水时砂、Technics 等设备。",
+                                kind = CouiTextKind.ItemSummary,
+                                color = colors.summary,
+                            )
+                        },
+                        onClick = onRefresh,
+                    ) {
+                        Text(
+                            text = "暂未检测到已连接的受支持耳机",
+                            kind = CouiTextKind.ItemTitle,
+                            color = colors.title,
+                        )
+                    }
+                }
+            }
+        } else {
+            items(sessions, key = { it.mac }) { session ->
+                Group(
+                    title = "已连接设备",
+                    colors = colors,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = session.name,
+                                    kind = CouiTextKind.ItemTitle,
+                                    color = colors.title,
+                                )
+                                Text(
+                                    text = "${session.adapterName} · ${session.mac}",
+                                    kind = CouiTextKind.ItemSummary,
+                                    color = colors.summary,
+                                )
+                            }
+                            StatusPill(
+                                text = if (session.handshakeReady) "已握手" else "连接中",
+                                accent = if (session.handshakeReady) Color(0xFF1A9E52) else colors.accent,
+                            )
+                        }
+
+                        Spacer(Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            BatteryTile("左耳", session.left, colors, Modifier.weight(1f))
+                            BatteryTile("右耳", session.right, colors, Modifier.weight(1f))
+                            BatteryTile("充电盒", session.box, colors, Modifier.weight(1f))
+                        }
+
+                        val modeLabel = when (session.noiseMode) {
+                            NoiseMode.ANC -> "降噪"
+                            NoiseMode.ANC_ADAPTIVE -> "自适应降噪"
+                            NoiseMode.ANC_DEEP -> "深度降噪"
+                            NoiseMode.ANC_MEDIUM -> "中度降噪"
+                            NoiseMode.ANC_LIGHT -> "轻度降噪"
+                            NoiseMode.TRANSPARENCY -> "通透模式"
+                            NoiseMode.OFF -> "关闭"
+                            NoiseMode.WIND -> "抗风噪"
+                            null -> "未同步"
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text = buildString {
+                                append("降噪状态：$modeLabel")
+                                session.firmware?.takeIf { it.isNotBlank() }?.let { append(" · 固件 $it") }
+                            },
+                            kind = CouiTextKind.ItemSummary,
+                            color = colors.summary,
+                        )
+                    }
+                }
             }
         }
+
+        item { Spacer(Modifier.height(16.dp)) }
     }
 }
 
 @Composable
-private fun TelemetryTile(label: String, value: String, bg: Color, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier,
-        cornerRadius = 12.dp,
-        colors = CardDefaults.defaultColors(color = bg),
+private fun BatteryTile(
+    label: String,
+    percent: Int,
+    colors: com.itos.coui.layout.CouiPageColors,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(colors.background)
+            .padding(vertical = 10.dp, horizontal = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 10.dp, horizontal = 4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                text = value,
-                style = MiuixTheme.textStyles.body2,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-            )
-            Text(
-                text = label,
-                style = MiuixTheme.textStyles.footnote2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-            )
-        }
+        Text(
+            text = if (percent >= 0) "$percent%" else "--",
+            kind = CouiTextKind.ItemTitle,
+            color = if (percent in 0..20) Color(0xFFD92D20) else colors.title,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = label,
+            kind = CouiTextKind.ItemSummary,
+            color = colors.summary,
+        )
     }
 }
 
-private fun NoiseMode.toDisplayLabel(): String = when (this) {
-    NoiseMode.ANC -> "降噪"
-    NoiseMode.ANC_ADAPTIVE -> "自适应"
-    NoiseMode.ANC_DEEP -> "深度"
-    NoiseMode.ANC_MEDIUM -> "中度"
-    NoiseMode.ANC_LIGHT -> "轻度"
-    NoiseMode.OFF -> "关闭"
-    NoiseMode.TRANSPARENCY -> "通透"
-    NoiseMode.WIND -> "抗风噪"
+@Composable
+private fun StatusPill(
+    text: String,
+    accent: Color,
+) {
+    Box(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(accent.copy(alpha = 0.14f))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    ) {
+        BasicText(
+            text = text,
+            style = TextStyle(
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = accent,
+            ),
+        )
+    }
 }
 
 private data class GitHubReleaseInfo(
@@ -758,20 +650,32 @@ private sealed interface UpdateState {
 }
 
 @Composable
-private fun SettingsTab(
+private fun SettingsContent(
     onRefresh: () -> Unit,
     onOpenSupportedDevices: () -> Unit,
     onOpenLogs: () -> Unit,
     onOpenAbout: () -> Unit,
-    bottomPadding: Dp,
+    contentPadding: PaddingValues,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val scrollBehavior = MiuixScrollBehavior()
+    val dark = CouiTheme.isDark
+    val colors = CouiPageDefaults.themeColors(dark)
+
     val modelCount = remember { OppoModelCatalog.allModels().size }
     var yieldEnabled by remember { mutableStateOf(true) }
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
     var showUpdateDialog by remember { mutableStateOf(false) }
+
+    val launcherAlias = remember(context) {
+        ComponentName(context, "com.originpods.app.ui.LauncherAlias")
+    }
+    var hideIcon by remember {
+        mutableStateOf(
+            context.packageManager.getComponentEnabledSetting(launcherAlias) ==
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+        )
+    }
 
     val quickExportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain"),
@@ -790,16 +694,6 @@ private fun SettingsTab(
             if (ok) "已导出 ${allEntries.size} 条日志" else "日志导出失败",
             Toast.LENGTH_SHORT,
         ).show()
-    }
-
-    val launcherAlias = remember(context) {
-        ComponentName(context, "com.originpods.app.ui.LauncherAlias")
-    }
-    var hideIcon by remember {
-        mutableStateOf(
-            context.packageManager.getComponentEnabledSetting(launcherAlias) ==
-                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-        )
     }
 
     fun openUrl(url: String) {
@@ -826,194 +720,324 @@ private fun SettingsTab(
         is UpdateState.Failed -> "检查失败: ${s.message}"
     }
 
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            TopAppBar(
-                title = "设置",
-                scrollBehavior = scrollBehavior,
-            )
-        },
-    ) { pagePadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = pagePadding.calculateTopPadding())
-                .nestedScroll(scrollBehavior.nestedScrollConnection),
-            contentPadding = PaddingValues(
-                start = 12.dp,
-                end = 12.dp,
-                top = 8.dp,
-                bottom = bottomPadding + 16.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            item { SmallTitle(text = "系统集成与退避") }
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column {
-                        SwitchPreference(
-                            checked = hideIcon,
-                            onCheckedChange = { hide ->
-                                hideIcon = hide
-                                context.packageManager.setComponentEnabledSetting(
-                                    launcherAlias,
-                                    if (hide) {
-                                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-                                    } else {
-                                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-                                    },
-                                    PackageManager.DONT_KILL_APP,
-                                )
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .consumeWindowInsets(contentPadding),
+        contentPadding = contentPadding,
+    ) {
+        item {
+            Group(
+                title = "系统集成与退避",
+                colors = colors,
+            ) {
+                CouiSwitchItem(
+                    title = "隐藏桌面图标",
+                    summary = "隐藏后仍可从 LSPosed 管理器 → 模块中打开 OriginPods",
+                    checked = hideIcon,
+                    onCheckedChange = { hide ->
+                        hideIcon = hide
+                        context.packageManager.setComponentEnabledSetting(
+                            launcherAlias,
+                            if (hide) {
+                                PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                            } else {
+                                PackageManager.COMPONENT_ENABLED_STATE_ENABLED
                             },
-                            title = "隐藏桌面图标",
-                            summary = "隐藏后仍可从 LSPosed 管理器 → 模块中打开 OriginPods",
+                            PackageManager.DONT_KILL_APP,
                         )
-                        SwitchPreference(
-                            checked = yieldEnabled,
-                            onCheckedChange = { yieldEnabled = it },
-                            title = "官方 App 运行时退避",
-                            summary = "检测到欢律 (HeyMelody) 启动时自动让出 RFCOMM 通道",
+                    },
+                    colors = colors,
+                    dark = dark,
+                )
+                Divider(color = colors.divider)
+                CouiSwitchItem(
+                    title = "官方 App 运行时退避",
+                    summary = "检测到欢律、智慧生活、Sony Sound Connect、Galaxy Wearable 等启动时自动让出通道",
+                    checked = yieldEnabled,
+                    onCheckedChange = { yieldEnabled = it },
+                    colors = colors,
+                    dark = dark,
+                )
+                Divider(color = colors.divider)
+                Item(
+                    icon = { CouiIconGlyph(CouiIcons.Filled.Headset, colors.accent) },
+                    summary = {
+                        Text(
+                            text = "OPPO / 一加 / realme ($modelCount 款) 及华为、荣耀、Sony、三星、Bose 等",
+                            kind = CouiTextKind.ItemSummary,
+                            color = colors.summary,
                         )
-                        ArrowPreference(
-                            title = "支持的设备",
-                            summary = "查看与搜索已适配的 $modelCount 款 OPPO / 一加 / realme 耳机",
-                            onClick = onOpenSupportedDevices,
-                        )
-                        ArrowPreference(
-                            title = "运行日志",
-                            summary = "查看跨进程 Hook 日志、报错堆栈与导出诊断文件",
-                            onClick = onOpenLogs,
-                        )
-                        ArrowPreference(
-                            title = "一键导出日志",
-                            summary = "自动抓取系统日志并保存为 .txt 文件",
-                            onClick = {
-                                scope.launch {
-                                    OriginLogStore.captureSystemLogs(context)
-                                    val ts = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-                                    quickExportLauncher.launch("OriginPods-logs-$ts.txt")
-                                }
-                            },
-                        )
-                        ArrowPreference(
-                            title = "LSPosed 推荐作用域",
-                            summary = "蓝牙 · 连接中心 · 设置 · VivoTws",
-                            onClick = onRefresh,
-                        )
-                    }
+                    },
+                    trailing = { CouiIconGlyph(CouiIcons.Filled.Next, colors.summary, 18) },
+                    onClick = onOpenSupportedDevices,
+                ) {
+                    Text(text = "支持的设备", kind = CouiTextKind.ItemTitle, color = colors.title)
                 }
-            }
-
-            item { SmallTitle(text = "关于与更新") }
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column {
-                        ArrowPreference(
-                            title = "关于 OriginPods",
-                            summary = "版本 v${BuildConfig.VERSION_NAME} · 作用域清单、开源协议与致谢",
-                            onClick = onOpenAbout,
+                Divider(color = colors.divider)
+                Item(
+                    icon = { CouiIconGlyph(CouiIcons.Filled.Lab, colors.accent) },
+                    summary = {
+                        Text(
+                            text = "查看跨进程 Hook 日志、报错堆栈与导出诊断文件",
+                            kind = CouiTextKind.ItemSummary,
+                            color = colors.summary,
                         )
-                        ArrowPreference(
-                            title = "检查更新 (GitHub)",
-                            summary = updateSummary,
-                            onClick = ::checkGitHubUpdate,
+                    },
+                    trailing = { CouiIconGlyph(CouiIcons.Filled.Next, colors.summary, 18) },
+                    onClick = onOpenLogs,
+                ) {
+                    Text(text = "运行日志", kind = CouiTextKind.ItemTitle, color = colors.title)
+                }
+                Divider(color = colors.divider)
+                Item(
+                    icon = { CouiIconGlyph(CouiIcons.Filled.CloudData, colors.accent) },
+                    summary = {
+                        Text(
+                            text = "自动抓取系统日志并保存为 .txt 文件",
+                            kind = CouiTextKind.ItemSummary,
+                            color = colors.summary,
                         )
-                        ArrowPreference(
-                            title = "GitHub 开源仓库",
-                            summary = "github.com/Syuuieo/OriginPods",
-                            onClick = { openUrl("https://github.com/Syuuieo/OriginPods") },
+                    },
+                    trailing = { CouiIconGlyph(CouiIcons.Filled.Next, colors.summary, 18) },
+                    onClick = {
+                        scope.launch {
+                            OriginLogStore.captureSystemLogs(context)
+                            val ts = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+                            quickExportLauncher.launch("OriginPods-logs-$ts.txt")
+                        }
+                    },
+                ) {
+                    Text(text = "一键导出日志", kind = CouiTextKind.ItemTitle, color = colors.title)
+                }
+                Divider(color = colors.divider)
+                Item(
+                    icon = { CouiIconGlyph(CouiIcons.Filled.ShieldCheck, colors.accent) },
+                    summary = {
+                        Text(
+                            text = "蓝牙 · 连接中心 · 设置 · VivoTws",
+                            kind = CouiTextKind.ItemSummary,
+                            color = colors.summary,
                         )
-                    }
+                    },
+                    onClick = onRefresh,
+                ) {
+                    Text(text = "LSPosed 推荐作用域", kind = CouiTextKind.ItemTitle, color = colors.title)
                 }
             }
         }
+
+        item {
+            Group(
+                title = "关于与更新",
+                colors = colors,
+            ) {
+                Item(
+                    icon = { CouiIconGlyph(CouiIcons.Filled.BookOpen, colors.accent) },
+                    summary = {
+                        Text(
+                            text = "版本 v${BuildConfig.VERSION_NAME} · 作用域清单、开源协议与致谢",
+                            kind = CouiTextKind.ItemSummary,
+                            color = colors.summary,
+                        )
+                    },
+                    trailing = { CouiIconGlyph(CouiIcons.Filled.Next, colors.summary, 18) },
+                    onClick = onOpenAbout,
+                ) {
+                    Text(text = "关于 OriginPods", kind = CouiTextKind.ItemTitle, color = colors.title)
+                }
+                Divider(color = colors.divider)
+                Item(
+                    icon = { CouiIconGlyph(CouiIcons.Filled.AppUpdate, colors.accent) },
+                    summary = {
+                        Text(
+                            text = updateSummary,
+                            kind = CouiTextKind.ItemSummary,
+                            color = colors.summary,
+                        )
+                    },
+                    trailing = { CouiIconGlyph(CouiIcons.Filled.Next, colors.summary, 18) },
+                    onClick = ::checkGitHubUpdate,
+                ) {
+                    Text(text = "检查更新 (GitHub)", kind = CouiTextKind.ItemTitle, color = colors.title)
+                }
+                Divider(color = colors.divider)
+                Item(
+                    icon = { CouiIconGlyph(CouiIcons.Filled.CloudLink, colors.accent) },
+                    summary = {
+                        Text(
+                            text = "github.com/Syuuieo/OriginPods",
+                            kind = CouiTextKind.ItemSummary,
+                            color = colors.summary,
+                        )
+                    },
+                    trailing = { CouiIconGlyph(CouiIcons.Filled.Next, colors.summary, 18) },
+                    onClick = { openUrl("https://github.com/Syuuieo/OriginPods") },
+                ) {
+                    Text(text = "GitHub 开源仓库", kind = CouiTextKind.ItemTitle, color = colors.title)
+                }
+            }
+        }
+
+        item { Spacer(Modifier.height(16.dp)) }
     }
 
     val currentDialogState = updateState
-    WindowDialog(
-        show = showUpdateDialog && currentDialogState !is UpdateState.Idle && currentDialogState !is UpdateState.Checking,
-        title = when (currentDialogState) {
-            is UpdateState.Available -> "发现新版本 ${currentDialogState.release.tag}"
-            is UpdateState.UpToDate -> "已是最新版本"
-            is UpdateState.Failed -> "检查更新失败"
-            else -> ""
-        },
-        summary = when (currentDialogState) {
-            is UpdateState.Available -> currentDialogState.release.notes.ifBlank {
-                "当前版本 v${BuildConfig.VERSION_NAME}，可前往 GitHub Release 下载最新版 APK。"
+    val dialogTitle = when (currentDialogState) {
+        is UpdateState.Available -> "发现新版本 ${currentDialogState.release.tag}"
+        is UpdateState.UpToDate -> "已是最新版本"
+        is UpdateState.Failed -> "检查更新失败"
+        else -> null
+    }
+    val dialogMessage = when (currentDialogState) {
+        is UpdateState.Available -> buildString {
+            append("当前版本: v${BuildConfig.VERSION_NAME}\n")
+            append("最新版本: ${currentDialogState.release.tag}")
+            if (currentDialogState.release.notes.isNotBlank()) {
+                append("\n\n${currentDialogState.release.notes}")
             }
-            is UpdateState.UpToDate -> "当前已安装最新正式版 v${BuildConfig.VERSION_NAME}。"
-            is UpdateState.Failed -> currentDialogState.message
-            else -> ""
-        },
+        }
+        is UpdateState.UpToDate -> "当前版本 v${BuildConfig.VERSION_NAME} 已是 GitHub Releases 最新版本 (${currentDialogState.currentTag})。"
+        is UpdateState.Failed -> "无法获取 GitHub Releases：${currentDialogState.message}"
+        else -> null
+    }
+
+    val primaryActionColors = remember(colors.accent) {
+        CouiDialogActionColors(
+            surface = colors.accent,
+            content = Color.White,
+            disabledSurface = colors.accent.copy(alpha = 0.3f),
+            disabledContent = Color.White.copy(alpha = 0.5f),
+        )
+    }
+
+    Dialog(
+        visible = showUpdateDialog && dialogTitle != null,
         onDismissRequest = { showUpdateDialog = false },
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            TextButton(
-                text = "关闭",
-                onClick = { showUpdateDialog = false },
-                modifier = Modifier.weight(1f),
+        dark = dark,
+        title = dialogTitle,
+        message = dialogMessage,
+        confirmAction = if (currentDialogState is UpdateState.Available) {
+            CouiDialogAction(
+                text = "前往下载",
+                style = CouiDialogActionStyle.Primary,
+                colors = primaryActionColors,
+                onClick = {
+                    showUpdateDialog = false
+                    openUrl(currentDialogState.release.url)
+                },
             )
-            if (currentDialogState is UpdateState.Available) {
-                TextButton(
-                    text = "前往下载",
-                    onClick = {
-                        showUpdateDialog = false
-                        openUrl(currentDialogState.release.url)
-                    },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
-                )
-            }
-        }
-    }
-}
-
-private fun fetchLatestGitHubRelease(): UpdateState {
-    return runCatching {
-        val url = URL("https://api.github.com/repos/Syuuieo/OriginPods/releases/latest")
-        val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 8000
-            readTimeout = 8000
-            setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("User-Agent", "OriginPods/${BuildConfig.VERSION_NAME}")
-        }
-        val code = conn.responseCode
-        if (code !in 200..299) {
-            return UpdateState.Failed("HTTP $code")
-        }
-        val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-        val json = JSONObject(body)
-        val tag = json.optString("tag_name").ifBlank { return UpdateState.Failed("未找到版本标签") }
-        val htmlUrl = json.optString("html_url", "https://github.com/Syuuieo/OriginPods/releases")
-        val notes = json.optString("body", "").take(300)
-        val remoteVer = tag.removePrefix("v").trim()
-        val localVer = BuildConfig.VERSION_NAME.removePrefix("v").trim()
-        if (compareSemver(remoteVer, localVer) > 0) {
-            UpdateState.Available(GitHubReleaseInfo(tag = tag, url = htmlUrl, notes = notes))
         } else {
-            UpdateState.UpToDate(tag)
-        }
-    }.getOrElse { err ->
-        UpdateState.Failed(err.message ?: "网络请求异常")
+            CouiDialogAction(
+                text = "确定",
+                style = CouiDialogActionStyle.Primary,
+                colors = primaryActionColors,
+                onClick = {
+                    showUpdateDialog = false
+                },
+            )
+        },
+        dismissAction = if (currentDialogState is UpdateState.Available) {
+            CouiDialogAction("稍后", onClick = { showUpdateDialog = false })
+        } else {
+            null
+        },
+    )
+}
+
+@Composable
+private fun CouiSwitchItem(
+    title: String,
+    summary: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    colors: com.itos.coui.layout.CouiPageColors,
+    dark: Boolean,
+) {
+    val source = remember { MutableInteractionSource() }
+    Item(
+        modifier = Modifier
+            .toggleable(
+                value = checked,
+                interactionSource = source,
+                indication = null,
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
+            )
+            .couiButtonFeedback(dark, source, enabled = true, list = true),
+        summary = {
+            Text(text = summary, kind = CouiTextKind.ItemSummary, color = colors.summary)
+        },
+        trailing = {
+            Switch(
+                checked = checked,
+                onCheckedChange = null,
+                interactionSource = source,
+                onDragCheckedChange = onCheckedChange,
+                dark = dark,
+            )
+        },
+    ) {
+        Text(text = title, kind = CouiTextKind.ItemTitle, color = colors.title)
     }
 }
 
-private fun compareSemver(remote: String, local: String): Int {
-    val rParts = remote.split(".").map { it.toIntOrNull() ?: 0 }
-    val lParts = local.split(".").map { it.toIntOrNull() ?: 0 }
-    val max = maxOf(rParts.size, lParts.size)
-    for (i in 0 until max) {
-        val r = rParts.getOrElse(i) { 0 }
-        val l = lParts.getOrElse(i) { 0 }
-        if (r != l) return r.compareTo(l)
+@Composable
+private fun CouiIconGlyph(
+    icon: ImageVector,
+    tint: Color,
+    sizeDp: Int = 22,
+) {
+    Image(
+        imageVector = icon,
+        contentDescription = null,
+        modifier = Modifier.size(sizeDp.dp),
+        colorFilter = ColorFilter.tint(tint),
+    )
+}
+
+@Composable
+private fun CouiNavBackButton(
+    onBack: () -> Unit,
+    tint: Color,
+) {
+    if (Build.VERSION.SDK_INT >= 34) {
+        TopAppBarButton(onClick = onBack) {
+            CouiIconGlyph(CouiIcons.Filled.Back, tint, 20)
+        }
+    } else {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .clickable(onClick = onBack),
+            contentAlignment = Alignment.Center,
+        ) {
+            CouiIconGlyph(CouiIcons.Filled.Back, tint, 20)
+        }
     }
-    return 0
+}
+
+@Composable
+private fun CouiActionButton(
+    text: String,
+    onClick: () -> Unit,
+    tint: Color,
+) {
+    if (Build.VERSION.SDK_INT >= 34) {
+        TopAppBarButton(onClick = onClick, text = true) {
+            BasicText(text = text, style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium, color = tint))
+        }
+    } else {
+        Box(
+            modifier = Modifier
+                .clip(CircleShape)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+        ) {
+            BasicText(text = text, style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium, color = tint))
+        }
+    }
 }
 
 @Composable
@@ -1022,19 +1046,68 @@ private fun SupportedDevicesScreen(
 ) {
     BackHandler(onBack = onBack)
 
-    val scrollBehavior = MiuixScrollBehavior()
-    var query by remember { mutableStateOf("") }
+    val dark = CouiTheme.isDark
+    val colors = CouiPageDefaults.themeColors(dark)
+    var query by rememberSaveable { mutableStateOf("") }
+    var selectedBrand by rememberSaveable { mutableStateOf("all") }
+
+    val thirdPartyModels = remember { com.originpods.integration.MultiBrandModelCatalog.models }
     val allModels = remember {
         OppoModelCatalog.allModels()
             .distinctBy { "${it.id}_${it.name}" }
             .sortedWith(compareBy<OppoModelSpec> { it.brand.lowercase() }.thenBy { it.name.lowercase() })
     }
-    val filteredModels = remember(query, allModels) {
-        val needle = query.trim().lowercase()
+
+    val brandTabs = remember(allModels, thirdPartyModels) {
+        val oppoCount = allModels.count { it.brand.equals("oppo", ignoreCase = true) }
+        val onePlusCount = allModels.count { it.brand.equals("oneplus", ignoreCase = true) }
+        val realmeCount = allModels.count { it.brand.equals("realme", ignoreCase = true) }
+        val xiaomiCount = thirdPartyModels.count { it.brandKey == "xiaomi" }
+        val huaweiCount = thirdPartyModels.count { it.brandKey == "huawei" }
+        val sonyCount = thirdPartyModels.count { it.brandKey == "sony" }
+        val otherCount = thirdPartyModels.count { it.brandKey == "others" }
+        listOf(
+            "all" to "全部 (${allModels.size + thirdPartyModels.size})",
+            "oppo" to "OPPO ($oppoCount)",
+            "oneplus" to "一加 ($onePlusCount)",
+            "realme" to "realme ($realmeCount)",
+            "xiaomi" to "小米/Redmi ($xiaomiCount)",
+            "huawei" to "华为/荣耀 ($huaweiCount)",
+            "sony" to "Sony ($sonyCount)",
+            "others" to "其他品牌 ($otherCount)",
+        )
+    }
+
+    val needle = query.trim().lowercase()
+    val filteredThirdPartyModels = remember(needle, selectedBrand, thirdPartyModels) {
+        val byBrand = when (selectedBrand) {
+            "all" -> thirdPartyModels
+            "xiaomi", "huawei", "sony", "others" -> thirdPartyModels.filter { it.brandKey == selectedBrand }
+            else -> emptyList()
+        }
         if (needle.isEmpty()) {
-            allModels
+            byBrand
         } else {
-            allModels.filter { spec ->
+            byBrand.filter {
+                it.name.lowercase().contains(needle) ||
+                    it.brand.lowercase().contains(needle) ||
+                    it.adapterId.lowercase().contains(needle)
+            }
+        }
+    }
+
+    val filteredModels = remember(needle, selectedBrand, allModels) {
+        val byBrand = when (selectedBrand) {
+            "all" -> allModels
+            "oppo" -> allModels.filter { it.brand.equals("oppo", ignoreCase = true) }
+            "oneplus" -> allModels.filter { it.brand.equals("oneplus", ignoreCase = true) }
+            "realme" -> allModels.filter { it.brand.equals("realme", ignoreCase = true) }
+            else -> emptyList()
+        }
+        if (needle.isEmpty()) {
+            byBrand
+        } else {
+            byBrand.filter { spec ->
                 spec.name.lowercase().contains(needle) ||
                     spec.brand.lowercase().contains(needle) ||
                     spec.id.lowercase().contains(needle) ||
@@ -1044,95 +1117,140 @@ private fun SupportedDevicesScreen(
     }
 
     Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding(),
+        containerColor = colors.background,
         topBar = {
-            SmallTopAppBar(
-                title = "支持的设备 (${filteredModels.size})",
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = MiuixIcons.Back,
-                            contentDescription = "返回",
-                            tint = MiuixTheme.colorScheme.onSurface,
-                        )
-                    }
+            TopAppBar(
+                title = {
+                    BasicText(
+                        text = "支持的设备 (${filteredModels.size + filteredThirdPartyModels.size})",
+                        style = LocalCouiTextStyle.current,
+                    )
                 },
-                scrollBehavior = scrollBehavior,
+                navigationIcon = { CouiNavBackButton(onBack = onBack, tint = colors.title) },
             )
         },
-    ) { pagePadding ->
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = pagePadding.calculateTopPadding()),
+                .padding(top = padding.calculateTopPadding())
+                .consumeWindowInsets(padding),
         ) {
-            TextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                label = "搜索型号、品牌或 Product ID",
-                useLabelAsPlaceholder = true,
-                singleLine = true,
-                leadingIcon = {
-                    Icon(
-                        imageVector = MiuixIcons.Search,
-                        contentDescription = null,
-                        modifier = Modifier.padding(start = 12.dp).size(18.dp),
-                        tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    )
-                },
-                trailingIcon = if (query.isNotEmpty()) {
-                    {
-                        IconButton(onClick = { query = "" }) {
-                            Icon(
-                                imageVector = MiuixIcons.Close,
-                                contentDescription = "清除搜索",
-                                modifier = Modifier.size(18.dp),
-                                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            )
-                        }
-                    }
-                } else {
-                    null
-                },
+            CompactSearchInput(
+                query = query,
+                onQueryChange = { query = it },
+                placeholder = "搜索型号、品牌或 Product ID",
+                colors = colors,
             )
 
-            LazyColumn(
+            Row(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .nestedScroll(scrollBehavior.nestedScrollConnection),
-                contentPadding = PaddingValues(
-                    start = 12.dp,
-                    end = 12.dp,
-                    top = 4.dp,
-                    bottom = pagePadding.calculateBottomPadding() + 16.dp,
-                ),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (filteredModels.isEmpty()) {
+                brandTabs.forEach { (key, label) ->
+                    val selected = selectedBrand == key
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(if (selected) colors.accent else colors.card)
+                            .clickable { selectedBrand = key }
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                    ) {
+                        BasicText(
+                            text = label,
+                            style = TextStyle(
+                                fontSize = 12.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (selected) Color.White else colors.title,
+                            ),
+                        )
+                    }
+                }
+            }
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = padding.calculateBottomPadding() + 16.dp),
+            ) {
+                if (filteredModels.isNotEmpty()) {
                     item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            insideMargin = PaddingValues(18.dp),
-                        ) {
-                            Text(
-                                text = "未找到匹配的耳机型号",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = MiuixTheme.colorScheme.onSurface,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = "可尝试搜索 OPPO、OnePlus、realme 或耳机型号关键字",
-                                fontSize = 13.sp,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            )
+                        val sectionTitle = when (selectedBrand) {
+                            "oppo" -> "OPPO 型号目录 (${filteredModels.size})"
+                            "oneplus" -> "一加 (OnePlus) 型号目录 (${filteredModels.size})"
+                            "realme" -> "realme 真我型号目录 (${filteredModels.size})"
+                            else -> "OPPO / 一加 / realme 型号目录 (${filteredModels.size})"
+                        }
+                        Group(
+                            title = sectionTitle,
+                            colors = colors,
+                        ) {}
+                    }
+                    items(filteredModels, key = { "${it.id}_${it.name}" }) { spec ->
+                        SupportedDeviceItemCard(spec, colors)
+                    }
+                }
+
+                if (filteredThirdPartyModels.isNotEmpty()) {
+                    item {
+                        val thirdPartyTitle = when (selectedBrand) {
+                            "xiaomi" -> "小米 / Redmi 型号目录 (${filteredThirdPartyModels.size})"
+                            "huawei" -> "华为 / 荣耀型号目录 (${filteredThirdPartyModels.size})"
+                            "sony" -> "Sony 型号目录 (${filteredThirdPartyModels.size})"
+                            "others" -> "其他品牌型号目录 (${filteredThirdPartyModels.size})"
+                            else -> "跨品牌适配型号 (${filteredThirdPartyModels.size})"
+                        }
+                        Group(
+                            title = thirdPartyTitle,
+                            colors = colors,
+                        ) {}
+                    }
+                    items(filteredThirdPartyModels, key = { "${it.adapterId}_${it.name}" }) { spec ->
+                        Group(colors = colors) {
+                            Item(
+                                summary = {
+                                    Text(
+                                        text = "协议: ${spec.adapterId} · ${if (spec.ancSupported) "电量与降噪控制" else "基础电量协议"}",
+                                        kind = CouiTextKind.ItemSummary,
+                                        color = colors.summary,
+                                    )
+                                },
+                                trailing = { StatusPill(spec.brand, colors.accent) },
+                            ) {
+                                Text(
+                                    text = spec.name,
+                                    kind = CouiTextKind.ItemTitle,
+                                    color = colors.title,
+                                )
+                            }
                         }
                     }
-                } else {
-                    items(filteredModels, key = { "${it.id}_${it.name}" }) { spec ->
-                        SupportedDeviceItemCard(spec)
+                }
+
+                if (filteredThirdPartyModels.isEmpty() && filteredModels.isEmpty()) {
+                    item {
+                        Group(title = "无匹配结果", colors = colors) {
+                            Item(
+                                summary = {
+                                    Text(
+                                        text = "可切换品牌分类或更换搜索关键字（如 OPPO、Redmi、FreeBuds、Sony）",
+                                        kind = CouiTextKind.ItemSummary,
+                                        color = colors.summary,
+                                    )
+                                },
+                            ) {
+                                Text(
+                                    text = "未找到匹配的耳机型号",
+                                    kind = CouiTextKind.ItemTitle,
+                                    color = colors.title,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -1141,7 +1259,57 @@ private fun SupportedDevicesScreen(
 }
 
 @Composable
-private fun SupportedDeviceItemCard(spec: OppoModelSpec) {
+private fun CompactSearchInput(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    placeholder: String,
+    colors: com.itos.coui.layout.CouiPageColors,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(CircleShape)
+            .background(colors.card)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CouiIconGlyph(CouiIcons.Outlined.Search, colors.summary, 18)
+        Spacer(Modifier.width(8.dp))
+        Box(modifier = Modifier.weight(1f)) {
+            if (query.isEmpty()) {
+                BasicText(
+                    text = placeholder,
+                    style = TextStyle(fontSize = 14.sp, color = colors.summary),
+                )
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                singleLine = true,
+                textStyle = TextStyle(fontSize = 14.sp, color = colors.title),
+                cursorBrush = SolidColor(colors.accent),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (query.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable { onQueryChange("") }
+                    .padding(4.dp),
+            ) {
+                CouiIconGlyph(CouiIcons.Filled.Close, colors.summary, 16)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SupportedDeviceItemCard(
+    spec: OppoModelSpec,
+    colors: com.itos.coui.layout.CouiPageColors,
+) {
     val brandLabel = when (spec.brand.lowercase()) {
         "oppo" -> "OPPO"
         "oneplus" -> "OnePlus"
@@ -1153,44 +1321,23 @@ private fun SupportedDeviceItemCard(spec: OppoModelSpec) {
     } else {
         "基础电量与状态"
     }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+    Group(colors = colors) {
+        Item(
+            summary = {
+                Text(
+                    text = "ID: ${spec.id.ifBlank { "-" }} · $ancSummary · ${if (spec.supportSpp) "SPP 协议" else "通用"}",
+                    kind = CouiTextKind.ItemSummary,
+                    color = colors.summary,
+                )
+            },
+            trailing = { StatusPill(brandLabel, colors.accent) },
         ) {
             Text(
                 text = spec.name,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MiuixTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                kind = CouiTextKind.ItemTitle,
+                color = colors.title,
             )
-            Box(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.12f))
-                    .padding(horizontal = 10.dp, vertical = 3.dp),
-            ) {
-                Text(
-                    text = brandLabel,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MiuixTheme.colorScheme.primary,
-                )
-            }
         }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = "ID: ${spec.id.ifBlank { "-" }} · $ancSummary · ${if (spec.supportSpp) "SPP 协议" else "通用"}",
-            fontSize = 12.sp,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-        )
     }
 }
 
@@ -1201,8 +1348,10 @@ private fun AboutScreen(
     BackHandler(onBack = onBack)
 
     val context = LocalContext.current
-    val scrollBehavior = MiuixScrollBehavior()
+    val dark = CouiTheme.isDark
+    val colors = CouiPageDefaults.themeColors(dark)
     val modelCount = remember { OppoModelCatalog.allModels().size }
+    val adapterCount = remember { EarbudAdapterRegistry.catalog().size }
 
     fun openUrl(url: String) {
         runCatching {
@@ -1211,164 +1360,138 @@ private fun AboutScreen(
     }
 
     Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = colors.background,
         topBar = {
-            SmallTopAppBar(
-                title = "关于",
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = MiuixIcons.Back,
-                            contentDescription = "返回",
-                            tint = MiuixTheme.colorScheme.onSurface,
-                        )
-                    }
-                },
-                scrollBehavior = scrollBehavior,
+            TopAppBar(
+                title = { BasicText("关于", style = LocalCouiTextStyle.current) },
+                navigationIcon = { CouiNavBackButton(onBack = onBack, tint = colors.title) },
             )
         },
-    ) { pagePadding ->
+    ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = pagePadding.calculateTopPadding())
-                .nestedScroll(scrollBehavior.nestedScrollConnection),
-            contentPadding = PaddingValues(
-                start = 12.dp,
-                end = 12.dp,
-                top = 8.dp,
-                bottom = pagePadding.calculateBottomPadding() + 20.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .consumeWindowInsets(padding),
+            contentPadding = contentPaddingWithBottom(padding),
         ) {
             item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    insideMargin = PaddingValues(18.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
+                Group(colors = colors) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(18.dp),
                     ) {
-                        Text(
-                            text = "OriginPods",
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MiuixTheme.colorScheme.onSurface,
-                        )
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.14f))
-                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
+                            BasicText(
+                                text = "OriginPods",
+                                style = TextStyle(
+                                    fontSize = 24.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.title,
+                                ),
+                            )
+                            StatusPill(
                                 text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MiuixTheme.colorScheme.primary,
+                                accent = colors.accent,
                             )
                         }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = "面向 vivo OriginOS 6 / 7 的第三方蓝牙耳机原生集成模块",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MiuixTheme.colorScheme.primary,
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        text = "在不接管 Android A2DP/HFP 音频链路的前提下，将受支持的 OPPO / 一加 / realme 耳机原生接入 OriginOS 连接中心卡片、系统蓝牙设置与 VivoTws 详情页。",
-                        fontSize = 13.sp,
-                        lineHeight = 19.sp,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    )
-                }
-            }
-
-            item { SmallTitle(text = "项目信息") }
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column {
-                        ArrowPreference(
-                            title = "GitHub 开源仓库",
-                            summary = "github.com/Syuuieo/OriginPods",
-                            onClick = { openUrl("https://github.com/Syuuieo/OriginPods") },
+                        Spacer(Modifier.height(6.dp))
+                        BasicText(
+                            text = "面向 vivo OriginOS 6 / 7 的第三方蓝牙耳机原生集成模块",
+                            style = TextStyle(
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = colors.accent,
+                            ),
                         )
-                        ArrowPreference(
-                            title = "开源协议",
-                            summary = "GNU General Public License v3.0 (GPL-3.0)",
-                            onClick = { openUrl("https://github.com/Syuuieo/OriginPods/blob/main/LICENSE") },
-                        )
-                        ArrowPreference(
-                            title = "已收录设备目录",
-                            summary = "共 $modelCount 款 OPPO / OnePlus / realme 型号",
-                            onClick = null,
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text = "基于 COUI-Kit 重构前端界面，在不接管 Android A2DP/HFP 音频链路的前提下，为 OPPO / 一加 / realme、华为、荣耀、Sony、三星、Bose、漫步者、水月雨、QCY、弱水时砂、Technics 等耳机提供原生系统集成。",
+                            kind = CouiTextKind.ItemSummary,
+                            color = colors.summary,
                         )
                     }
                 }
             }
 
-            item { SmallTitle(text = "系统作用域清单") }
             item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    insideMargin = PaddingValues(16.dp),
-                ) {
+                Group(title = "项目信息", colors = colors) {
+                    Item(
+                        summary = { Text(text = "github.com/Syuuieo/OriginPods", kind = CouiTextKind.ItemSummary, color = colors.summary) },
+                        trailing = { CouiIconGlyph(CouiIcons.Filled.Next, colors.summary, 18) },
+                        onClick = { openUrl("https://github.com/Syuuieo/OriginPods") },
+                    ) {
+                        Text(text = "GitHub 开源仓库", kind = CouiTextKind.ItemTitle, color = colors.title)
+                    }
+                    Divider(color = colors.divider)
+                    Item(
+                        summary = { Text(text = "GNU General Public License v3.0 (GPL-3.0)", kind = CouiTextKind.ItemSummary, color = colors.summary) },
+                        trailing = { CouiIconGlyph(CouiIcons.Filled.Next, colors.summary, 18) },
+                        onClick = { openUrl("https://github.com/Syuuieo/OriginPods/blob/main/LICENSE") },
+                    ) {
+                        Text(text = "开源协议", kind = CouiTextKind.ItemTitle, color = colors.title)
+                    }
+                    Divider(color = colors.divider)
+                    Item(
+                        summary = {
+                            Text(
+                                text = "$adapterCount 组品牌适配器 · $modelCount 款 OPPO / OnePlus / realme 型号",
+                                kind = CouiTextKind.ItemSummary,
+                                color = colors.summary,
+                            )
+                        },
+                    ) {
+                        Text(text = "已收录设备目录", kind = CouiTextKind.ItemTitle, color = colors.title)
+                    }
+                }
+            }
+
+            item {
+                Group(title = "系统作用域清单", colors = colors) {
                     val scopes = listOf(
                         "com.android.bluetooth" to "维护单会话 RFCOMM 通道并向系统进程广播电量与降噪状态",
                         "com.vivo.connbase.connectcenter" to "注入连接中心降噪图标/标签与查找响铃转发（兼容 OriginOS 6 / 7）",
                         "com.android.settings" to "系统蓝牙设备列表识别为原生 TWS 入口",
                         "com.android.vivo.tws.vivotws" to "原生耳机详情页电量、降噪模式与功能开关桥接",
                     )
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        scopes.forEach { (pkg, desc) ->
-                            Column {
-                                Text(
-                                    text = pkg,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MiuixTheme.colorScheme.onSurface,
-                                )
-                                Text(
-                                    text = desc,
-                                    fontSize = 12.sp,
-                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                )
-                            }
+                    scopes.forEachIndexed { idx, (pkg, desc) ->
+                        if (idx > 0) Divider(color = colors.divider)
+                        Item(
+                            summary = { Text(text = desc, kind = CouiTextKind.ItemSummary, color = colors.summary) },
+                        ) {
+                            Text(text = pkg, kind = CouiTextKind.ItemTitle, color = colors.title)
                         }
                     }
                 }
             }
 
-            item { SmallTitle(text = "致谢与参考") }
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column {
-                        ArrowPreference(
-                            title = "HyperEars",
-                            summary = "参考模块整体架构、协议/适配器分层、蓝牙单会话桥接与 Miuix 界面风格",
-                            onClick = { openUrl("https://github.com/silverpoetry/HyperEars") },
-                        )
-                        ArrowPreference(
-                            title = "OppoPods",
-                            summary = "参考 OPPO / 一加 / realme 设备白名单目录与 0x8103 协议字段解析",
-                            onClick = { openUrl("https://github.com/Leaf-lsgtky/OppoPods") },
-                        )
-                        ArrowPreference(
-                            title = "Miuix",
-                            summary = "Compose Multiplatform UI 组件库",
-                            onClick = { openUrl("https://github.com/compose-miuix-ui/miuix") },
-                        )
-                        ArrowPreference(
-                            title = "libxposed",
-                            summary = "现代 Xposed API 101+ 模块开发接口",
-                            onClick = { openUrl("https://github.com/libxposed/api") },
-                        )
+                Group(title = "致谢与参考", colors = colors) {
+                    val credits = listOf(
+                        Triple("HyperEars", "参考整体模块架构、协议/适配器分层、上游多品牌协议实现与单会话桥接", "https://github.com/silverpoetry/HyperEars"),
+                        Triple("OppoPods", "参考 OPPO / 一加 / realme 设备白名单目录与 0x8103 协议字段解析", "https://github.com/Leaf-lsgtky/OppoPods"),
+                        Triple("COUI-Kit", "提供 ColorOS 风格 Compose 组件库与凝光视效", "https://github.com/ItosEO/COUI-Kit"),
+                        Triple("libxposed", "提供现代 Xposed API 101+ 模块开发接口", "https://github.com/libxposed/api"),
+                    )
+                    credits.forEachIndexed { idx, (name, desc, url) ->
+                        if (idx > 0) Divider(color = colors.divider)
+                        Item(
+                            summary = { Text(text = desc, kind = CouiTextKind.ItemSummary, color = colors.summary) },
+                            trailing = { CouiIconGlyph(CouiIcons.Filled.Next, colors.summary, 18) },
+                            onClick = { openUrl(url) },
+                        ) {
+                            Text(text = name, kind = CouiTextKind.ItemTitle, color = colors.title)
+                        }
                     }
                 }
             }
+
+            item { Spacer(Modifier.height(16.dp)) }
         }
     }
 }
@@ -1380,14 +1503,17 @@ private fun LogViewerScreen(
     BackHandler(onBack = onBack)
 
     val context = LocalContext.current
+    @Suppress("DEPRECATION")
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
-    val scrollBehavior = MiuixScrollBehavior()
+    val dark = CouiTheme.isDark
+    val colors = CouiPageDefaults.themeColors(dark)
+
     val entries by OriginLogStore.entries.collectAsState()
     val captureSource by OriginLogStore.lastCaptureSource.collectAsState()
 
-    var query by remember { mutableStateOf("") }
-    var errorsOnly by remember { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var errorsOnly by rememberSaveable { mutableStateOf(false) }
     var capturing by remember { mutableStateOf(false) }
 
     val filtered = remember(entries, query, errorsOnly) {
@@ -1434,170 +1560,133 @@ private fun LogViewerScreen(
     }
 
     Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding(),
+        containerColor = colors.background,
         topBar = {
-            SmallTopAppBar(
-                title = "运行日志 (${filtered.size})",
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = MiuixIcons.Back,
-                            contentDescription = "返回",
-                            tint = MiuixTheme.colorScheme.onSurface,
-                        )
-                    }
-                },
+            TopAppBar(
+                title = { BasicText("运行日志 (${filtered.size})", style = LocalCouiTextStyle.current) },
+                navigationIcon = { CouiNavBackButton(onBack = onBack, tint = colors.title) },
                 actions = {
-                    IconButton(onClick = ::refreshLogs) {
-                        Icon(
-                            imageVector = MiuixIcons.Refresh,
-                            contentDescription = "刷新系统日志",
-                            tint = MiuixTheme.colorScheme.onSurface,
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            val ts = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-                            exportLauncher.launch("OriginPods-logs-$ts.txt")
-                        },
-                    ) {
-                        Icon(
-                            imageVector = MiuixIcons.FileDownloads,
-                            contentDescription = "导出日志",
-                            tint = MiuixTheme.colorScheme.onSurface,
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            OriginLogStore.clear(context)
-                            Toast.makeText(context, "已清空本地日志", Toast.LENGTH_SHORT).show()
-                        },
-                    ) {
-                        Icon(
-                            imageVector = MiuixIcons.Delete,
-                            contentDescription = "清空日志",
-                            tint = MiuixTheme.colorScheme.onSurface,
+                    if (Build.VERSION.SDK_INT >= 34) {
+                        TopAppBarButtonGroup {
+                            CouiActionButton("刷新", ::refreshLogs, colors.title)
+                            CouiActionButton(
+                                "导出",
+                                {
+                                    val ts = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+                                    exportLauncher.launch("OriginPods-logs-$ts.txt")
+                                },
+                                colors.accent,
+                            )
+                        }
+                    } else {
+                        CouiActionButton("刷新", ::refreshLogs, colors.title)
+                        CouiActionButton(
+                            "导出",
+                            {
+                                val ts = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+                                exportLauncher.launch("OriginPods-logs-$ts.txt")
+                            },
+                            colors.accent,
                         )
                     }
                 },
-                scrollBehavior = scrollBehavior,
             )
         },
-    ) { pagePadding ->
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = pagePadding.calculateTopPadding()),
+                .padding(top = padding.calculateTopPadding())
+                .consumeWindowInsets(padding),
         ) {
-            TextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                label = "筛选标签、报错或关键词",
-                useLabelAsPlaceholder = true,
-                singleLine = true,
-                leadingIcon = {
-                    Icon(
-                        imageVector = MiuixIcons.Search,
-                        contentDescription = null,
-                        modifier = Modifier.padding(start = 12.dp).size(18.dp),
-                        tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    )
-                },
-                trailingIcon = if (query.isNotEmpty()) {
-                    {
-                        IconButton(onClick = { query = "" }) {
-                            Icon(
-                                imageVector = MiuixIcons.Close,
-                                contentDescription = "清除",
-                                modifier = Modifier.size(18.dp),
-                                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            )
-                        }
-                    }
-                } else {
-                    null
-                },
+            CompactSearchInput(
+                query = query,
+                onQueryChange = { query = it },
+                placeholder = "筛选标签、报错或关键词",
+                colors = colors,
             )
 
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(
+                ActionChip(
                     text = if (errorsOnly) "仅 W/E" else "全部级别",
+                    active = errorsOnly,
+                    colors = colors,
                     onClick = { errorsOnly = !errorsOnly },
-                    colors = if (errorsOnly) {
-                        ButtonDefaults.textButtonColorsPrimary()
-                    } else {
-                        ButtonDefaults.textButtonColors()
-                    },
                 )
-                TextButton(
+                ActionChip(
                     text = "复制日志",
+                    active = false,
+                    colors = colors,
                     onClick = {
                         val text = OriginLogStore.buildExportText(context, filtered.asReversed())
                         clipboard.setText(AnnotatedString(text))
                         Toast.makeText(context, "已复制 ${filtered.size} 条日志", Toast.LENGTH_SHORT).show()
                     },
                 )
-                TextButton(
+                ActionChip(
                     text = "导出 .txt",
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    active = true,
+                    colors = colors,
                     onClick = {
                         val ts = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
                         exportLauncher.launch("OriginPods-logs-$ts.txt")
                     },
                 )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = if (capturing) "正在抓取..." else captureSource,
-                    fontSize = 11.sp,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                ActionChip(
+                    text = "清空",
+                    active = false,
+                    colors = colors,
+                    onClick = {
+                        OriginLogStore.clear(context)
+                        Toast.makeText(context, "已清空本地日志", Toast.LENGTH_SHORT).show()
+                    },
                 )
             }
 
+            BasicText(
+                text = if (capturing) "正在抓取系统日志..." else "来源：$captureSource",
+                style = TextStyle(fontSize = 11.sp, color = colors.summary),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+
             LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .nestedScroll(scrollBehavior.nestedScrollConnection),
-                contentPadding = PaddingValues(
-                    start = 12.dp,
-                    end = 12.dp,
-                    top = 4.dp,
-                    bottom = pagePadding.calculateBottomPadding() + 16.dp,
-                ),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = padding.calculateBottomPadding() + 16.dp),
             ) {
                 if (filtered.isEmpty()) {
                     item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            insideMargin = PaddingValues(18.dp),
-                        ) {
-                            Text(
-                                text = if (capturing) "正在读取系统日志..." else "暂无匹配的日志记录",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = MiuixTheme.colorScheme.onSurface,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = "可点击右上角刷新按钮抓取 Root 系统 Logcat，或取消「仅 W/E」筛选。",
-                                fontSize = 12.sp,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            )
+                        Group(colors = colors) {
+                            Item(
+                                summary = {
+                                    Text(
+                                        text = "可点击右上角「刷新」抓取 Root 系统 Logcat，或取消「仅 W/E」筛选。",
+                                        kind = CouiTextKind.ItemSummary,
+                                        color = colors.summary,
+                                    )
+                                },
+                            ) {
+                                Text(
+                                    text = if (capturing) "正在读取系统日志..." else "暂无匹配的日志记录",
+                                    kind = CouiTextKind.ItemTitle,
+                                    color = colors.title,
+                                )
+                            }
                         }
                     }
                 } else {
                     items(filtered, key = { it.id }) { entry ->
-                        LogEntryCard(entry)
+                        LogEntryCard(entry, colors)
                     }
                 }
             }
@@ -1606,57 +1695,128 @@ private fun LogViewerScreen(
 }
 
 @Composable
-private fun LogEntryCard(entry: LogEntry) {
-    val (levelBg, levelFg) = when (entry.level) {
-        LogLevel.ERROR -> Color(0xFFFF3B30).copy(alpha = 0.14f) to Color(0xFFD92D20)
-        LogLevel.WARN -> Color(0xFFFF9F0A).copy(alpha = 0.16f) to Color(0xFFB54708)
-        LogLevel.INFO -> MiuixTheme.colorScheme.primary.copy(alpha = 0.12f) to MiuixTheme.colorScheme.primary
-        LogLevel.DEBUG -> MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.12f) to MiuixTheme.colorScheme.onSurfaceVariantSummary
-    }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        insideMargin = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+private fun ActionChip(
+    text: String,
+    active: Boolean,
+    colors: com.itos.coui.layout.CouiPageColors,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(if (active) colors.accent else colors.card)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(levelBg)
-                    .padding(horizontal = 7.dp, vertical = 2.dp),
-            ) {
-                Text(
-                    text = entry.level.shortLabel,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = levelFg,
-                )
-            }
-            Text(
-                text = entry.tag,
+        BasicText(
+            text = text,
+            style = TextStyle(
                 fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MiuixTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = "${entry.timestamp} · ${entry.source}",
-                fontSize = 10.sp,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            )
-        }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = entry.message,
-            fontSize = 11.sp,
-            lineHeight = 16.sp,
-            fontFamily = FontFamily.Monospace,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                fontWeight = FontWeight.Medium,
+                color = if (active) Color.White else colors.title,
+            ),
         )
     }
+}
+
+@Composable
+private fun LogEntryCard(
+    entry: LogEntry,
+    colors: com.itos.coui.layout.CouiPageColors,
+) {
+    val levelColor = when (entry.level) {
+        LogLevel.ERROR -> Color(0xFFD92D20)
+        LogLevel.WARN -> Color(0xFFB54708)
+        LogLevel.INFO -> colors.accent
+        LogLevel.DEBUG -> colors.summary
+    }
+    Group(colors = colors) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                StatusPill(entry.level.shortLabel, levelColor)
+                BasicText(
+                    text = entry.tag,
+                    style = TextStyle(
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.title,
+                    ),
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                BasicText(
+                    text = "${entry.timestamp} · ${entry.source}",
+                    style = TextStyle(fontSize = 10.sp, color = colors.summary),
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            BasicText(
+                text = entry.message,
+                style = TextStyle(
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = colors.summary,
+                ),
+            )
+        }
+    }
+}
+
+private fun contentPaddingWithBottom(padding: PaddingValues): PaddingValues =
+    PaddingValues(
+        top = padding.calculateTopPadding(),
+        bottom = padding.calculateBottomPadding() + 16.dp,
+    )
+
+private fun fetchLatestGitHubRelease(): UpdateState {
+    return runCatching {
+        val url = URL("https://api.github.com/repos/Syuuieo/OriginPods/releases/latest")
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 8000
+            readTimeout = 8000
+            setRequestProperty("Accept", "application/vnd.github+json")
+            setRequestProperty("User-Agent", "OriginPods/${BuildConfig.VERSION_NAME}")
+        }
+        val code = conn.responseCode
+        if (code !in 200..299) {
+            return UpdateState.Failed("HTTP $code")
+        }
+        val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        val json = JSONObject(body)
+        val tag = json.optString("tag_name").ifBlank { return UpdateState.Failed("未找到版本标签") }
+        val htmlUrl = json.optString("html_url", "https://github.com/Syuuieo/OriginPods/releases")
+        val notes = json.optString("body", "").take(300)
+        val remoteVer = tag.removePrefix("v").trim()
+        val localVer = BuildConfig.VERSION_NAME.removePrefix("v").trim()
+        if (compareSemver(remoteVer, localVer) > 0) {
+            UpdateState.Available(GitHubReleaseInfo(tag = tag, url = htmlUrl, notes = notes))
+        } else {
+            UpdateState.UpToDate(tag)
+        }
+    }.getOrElse { err ->
+        UpdateState.Failed(err.message ?: "网络请求异常")
+    }
+}
+
+private fun compareSemver(remote: String, local: String): Int {
+    val rParts = remote.split(".").map { it.toIntOrNull() ?: 0 }
+    val lParts = local.split(".").map { it.toIntOrNull() ?: 0 }
+    val max = maxOf(rParts.size, lParts.size)
+    for (i in 0 until max) {
+        val r = rParts.getOrElse(i) { 0 }
+        val l = lParts.getOrElse(i) { 0 }
+        if (r != l) return r.compareTo(l)
+    }
+    return 0
 }
