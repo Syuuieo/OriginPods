@@ -289,7 +289,7 @@ class BluetoothProcessHook(
                                 if (isA2dp) connectedA2dp.add(address)
                                 if (isHfp) connectedHfp.add(address)
                                 module.log(Log.INFO, TAG, "BT connected (${intent.action}): ${device.name} ($address)")
-                                scheduleDebouncedConnect(device)
+                                OriginDeviceSessionManager.onDeviceConnected(device)
                             } else if (state == BluetoothProfile.STATE_DISCONNECTED) {
                                 if (isA2dp) connectedA2dp.remove(address)
                                 if (isHfp) connectedHfp.remove(address)
@@ -438,9 +438,9 @@ class BluetoothProcessHook(
         )
     }
 
-    private fun scheduleDebouncedConnect(device: BluetoothDevice) {
+    private fun scheduleHfpFallbackConnect(device: BluetoothDevice) {
         val address = device.address ?: return
-        pendingConnects.remove(address)?.let { mainHandler.removeCallbacks(it) }
+        if (pendingConnects.containsKey(address)) return
         val task = Runnable {
             pendingConnects.remove(address)
             if (connectedA2dp.contains(address) || connectedHfp.contains(address)) {
@@ -448,7 +448,7 @@ class BluetoothProcessHook(
             }
         }
         pendingConnects[address] = task
-        mainHandler.postDelayed(task, CONNECT_SETTLE_DELAY_MS)
+        mainHandler.postDelayed(task, HFP_SETTLE_DELAY_MS)
     }
 
     private fun isAnyAudioProfileConnected(context: Context, device: BluetoothDevice): Boolean {
@@ -460,7 +460,7 @@ class BluetoothProcessHook(
     }
 
     private fun pushToVivoBatteryHelper(mac: String, state: ActiveDeviceSessionState) {
-        val battery = state.snapshot.get<BatteryFeatureState>()?.battery
+        val battery = state.snapshot.get<BatteryFeatureState>()?.battery ?: return
         runCatching {
             val helperClass = classLoader.loadClass("com.android.bluetooth.vivo.VivoBatteryHelper")
             val helper = helperClass.getMethod("getInstance").invoke(null) ?: return
@@ -564,7 +564,7 @@ class BluetoothProcessHook(
 
     companion object {
         private const val TAG = "OriginPods.BT"
-        private const val CONNECT_SETTLE_DELAY_MS = 1500L
+        private const val HFP_SETTLE_DELAY_MS = 350L
         private const val KEEPALIVE_INTERVAL_MS = 45_000L
     }
 }

@@ -68,7 +68,6 @@ object OriginDeviceSessionManager {
         val initialState = existingState?.copy(identity = identity, adapter = adapter)
             ?: ActiveDeviceSessionState(identity = identity, adapter = adapter)
         _activeDevices.value = _activeDevices.value + (address to initialState)
-        onSessionUpdated?.invoke(address, initialState)
 
         val session = adapter.createProtocolSession() ?: return
         val endpoint = adapter.transports.firstOrNull {

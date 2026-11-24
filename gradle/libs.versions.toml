@@ -11,7 +11,7 @@ serialization = "1.12.0"
 junit = "4.13.2"
 libxposed-api = "102.0.0"
 libxposed-service = "102.0.0"
-coui = "0.0.1-alpha15"
+coui = "0.0.1-alpha17"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "core" }

@@ -186,7 +186,7 @@ class MainActivity : ComponentActivity() {
                 putExtra("request_state", true)
             },
         )
-        window.decorView.postDelayed({ ensureBluetoothPermissionAndScan() }, 1200L)
+        window.decorView.postDelayed({ ensureBluetoothPermissionAndScan() }, 100L)
 
         setContent {
             CouiTheme {
