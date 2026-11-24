@@ -142,6 +142,9 @@ class MainActivity : ComponentActivity() {
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
             val mac = intent.getStringExtra("mac") ?: return
+            // BluetoothProcessHook (com.android.bluetooth) owns the single RFCOMM session;
+            // close any fallback local socket in the UI process so they never compete.
+            OriginDeviceSessionManager.onDeviceDisconnected(mac)
             val name = intent.getStringExtra("name") ?: mac
             val prev = remoteStates[mac]
             val mode = intent.getStringExtra("noise_mode")
@@ -178,7 +181,12 @@ class MainActivity : ComponentActivity() {
             )
             receiverRegistered = true
         }
-        ensureBluetoothPermissionAndScan()
+        sendBroadcast(
+            Intent(OriginPodsXposedEntry.ACTION_CONTROL).apply {
+                putExtra("request_state", true)
+            },
+        )
+        window.decorView.postDelayed({ ensureBluetoothPermissionAndScan() }, 1200L)
 
         setContent {
             CouiTheme {
@@ -224,7 +232,10 @@ class MainActivity : ComponentActivity() {
                 override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
                     runCatching {
                         proxy.connectedDevices.forEach { device ->
-                            OriginDeviceSessionManager.onDeviceConnected(device)
+                            val addr = device.address
+                            if (addr != null && !remoteStates.containsKey(addr)) {
+                                OriginDeviceSessionManager.onDeviceConnected(device)
+                            }
                         }
                     }
                     adapter.closeProfileProxy(profile, proxy)

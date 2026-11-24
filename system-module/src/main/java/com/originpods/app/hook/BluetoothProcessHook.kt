@@ -37,10 +37,14 @@ class BluetoothProcessHook(
 
     @Volatile
     private var appContext: Context? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val ringingStates = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    private val connectedA2dp = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val connectedHfp = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val pendingConnects = java.util.concurrent.ConcurrentHashMap<String, Runnable>()
 
     override fun install() {
-        Handler(Looper.getMainLooper()).postDelayed({
+        mainHandler.postDelayed({
             val app = runCatching {
                 Class.forName("android.app.ActivityThread")
                     .getDeclaredMethod("currentApplication")
@@ -51,6 +55,7 @@ class BluetoothProcessHook(
                 module.log(Log.WARN, TAG, "currentApplication is null in com.android.bluetooth")
                 return@postDelayed
             }
+            appContext = app
 
             OriginDeviceSessionManager.onSessionUpdated = { mac, state ->
                 broadcastState(app, mac, state)
@@ -60,8 +65,24 @@ class BluetoothProcessHook(
             registerReceivers(app)
             scanConnectedA2dp(app)
             hookVivoBatteryHelperObserver()
+            scheduleKeepalive(app)
             module.log(Log.INFO, TAG, "BluetoothProcessHook initialized")
         }, 1500L)
+    }
+
+    private fun scheduleKeepalive(context: Context) {
+        mainHandler.postDelayed(
+            object : Runnable {
+                override fun run() {
+                    OriginDeviceSessionManager.activeDevices.value.forEach { (mac, state) ->
+                        pushToVivoBatteryHelper(mac, state)
+                        broadcastState(context, mac, state)
+                    }
+                    mainHandler.postDelayed(this, KEEPALIVE_INTERVAL_MS)
+                }
+            },
+            KEEPALIVE_INTERVAL_MS,
+        )
     }
 
     private fun hookVivoBatteryHelperObserver() {
@@ -251,19 +272,41 @@ class BluetoothProcessHook(
                         BluetoothDevice.EXTRA_DEVICE,
                         BluetoothDevice::class.java,
                     ) ?: return
+                    val address = device.address ?: return
                     val state = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, -1)
                     when (intent.action) {
                         BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
-                            OriginDeviceSessionManager.onDeviceDisconnected(device.address)
+                            pendingConnects.remove(address)?.let { mainHandler.removeCallbacks(it) }
+                            connectedA2dp.remove(address)
+                            connectedHfp.remove(address)
+                            OriginDeviceSessionManager.onDeviceDisconnected(address)
                             removeFromVivoBatteryHelper(device)
                         }
                         else -> {
+                            val isA2dp = intent.action == BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED
+                            val isHfp = intent.action == BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED
                             if (state == BluetoothProfile.STATE_CONNECTED) {
-                                module.log(Log.INFO, TAG, "BT connected: ${device.name} (${device.address})")
-                                OriginDeviceSessionManager.onDeviceConnected(device)
+                                if (isA2dp) connectedA2dp.add(address)
+                                if (isHfp) connectedHfp.add(address)
+                                module.log(Log.INFO, TAG, "BT connected (${intent.action}): ${device.name} ($address)")
+                                scheduleDebouncedConnect(device)
                             } else if (state == BluetoothProfile.STATE_DISCONNECTED) {
-                                OriginDeviceSessionManager.onDeviceDisconnected(device.address)
-                                removeFromVivoBatteryHelper(device)
+                                if (isA2dp) connectedA2dp.remove(address)
+                                if (isHfp) connectedHfp.remove(address)
+                                val stillConnected = connectedA2dp.contains(address) ||
+                                    connectedHfp.contains(address) ||
+                                    isAnyAudioProfileConnected(ctx, device)
+                                if (!stillConnected) {
+                                    pendingConnects.remove(address)?.let { mainHandler.removeCallbacks(it) }
+                                    OriginDeviceSessionManager.onDeviceDisconnected(address)
+                                    removeFromVivoBatteryHelper(device)
+                                } else {
+                                    module.log(
+                                        Log.INFO,
+                                        TAG,
+                                        "ignore partial disconnect (${intent.action}) for $address; audio profile still active",
+                                    )
+                                }
                             }
                         }
                     }
@@ -338,6 +381,7 @@ class BluetoothProcessHook(
                 override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
                     runCatching {
                         proxy.connectedDevices.forEach { device ->
+                            device.address?.let { connectedA2dp.add(it) }
                             module.log(Log.INFO, TAG, "scan A2DP connected: ${device.name} (${device.address})")
                             OriginDeviceSessionManager.onDeviceConnected(device)
                         }
@@ -394,8 +438,29 @@ class BluetoothProcessHook(
         )
     }
 
+    private fun scheduleDebouncedConnect(device: BluetoothDevice) {
+        val address = device.address ?: return
+        pendingConnects.remove(address)?.let { mainHandler.removeCallbacks(it) }
+        val task = Runnable {
+            pendingConnects.remove(address)
+            if (connectedA2dp.contains(address) || connectedHfp.contains(address)) {
+                OriginDeviceSessionManager.onDeviceConnected(device)
+            }
+        }
+        pendingConnects[address] = task
+        mainHandler.postDelayed(task, CONNECT_SETTLE_DELAY_MS)
+    }
+
+    private fun isAnyAudioProfileConnected(context: Context, device: BluetoothDevice): Boolean {
+        val manager = context.getSystemService(BluetoothManager::class.java) ?: return false
+        return runCatching {
+            manager.getConnectionState(device, BluetoothProfile.A2DP) == BluetoothProfile.STATE_CONNECTED ||
+                manager.getConnectionState(device, BluetoothProfile.HEADSET) == BluetoothProfile.STATE_CONNECTED
+        }.getOrDefault(false)
+    }
+
     private fun pushToVivoBatteryHelper(mac: String, state: ActiveDeviceSessionState) {
-        val battery = state.snapshot.get<BatteryFeatureState>()?.battery ?: return
+        val battery = state.snapshot.get<BatteryFeatureState>()?.battery
         runCatching {
             val helperClass = classLoader.loadClass("com.android.bluetooth.vivo.VivoBatteryHelper")
             val helper = helperClass.getMethod("getInstance").invoke(null) ?: return
@@ -421,15 +486,17 @@ class BluetoothProcessHook(
             fun setIntField(name: String, value: Int) {
                 recordClass.getDeclaredField(name).apply { isAccessible = true }.setInt(record, value)
             }
-            var cs = 0
-            if (battery.left.charging) cs = cs or 1
-            if (battery.right.charging) cs = cs or 2
-            if (battery.case.charging) cs = cs or 4
+            if (battery != null) {
+                var cs = 0
+                if (battery.left.charging) cs = cs or 1
+                if (battery.right.charging) cs = cs or 2
+                if (battery.case.charging) cs = cs or 4
 
-            setIntField("mLeftBattery", battery.left.percent ?: -1)
-            setIntField("mRightBattery", battery.right.percent ?: -1)
-            setIntField("mCaseBattery", battery.case.percent ?: -1)
-            setIntField("mChargeStatus", cs)
+                setIntField("mLeftBattery", battery.left.percent ?: -1)
+                setIntField("mRightBattery", battery.right.percent ?: -1)
+                setIntField("mCaseBattery", battery.case.percent ?: -1)
+                setIntField("mChargeStatus", cs)
+            }
             setIntField("mWearType", 2)
             setIntField("mInEarStatus", -1)
 
@@ -497,5 +564,7 @@ class BluetoothProcessHook(
 
     companion object {
         private const val TAG = "OriginPods.BT"
+        private const val CONNECT_SETTLE_DELAY_MS = 1500L
+        private const val KEEPALIVE_INTERVAL_MS = 45_000L
     }
 }

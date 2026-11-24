@@ -2,6 +2,8 @@ package com.originpods.app.runtime
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.originpods.integration.ControlRequest
 import com.originpods.integration.DeviceFeatureSnapshot
@@ -27,8 +29,14 @@ data class ActiveDeviceSessionState(
 
 object OriginDeviceSessionManager {
     private const val TAG = "OriginPods.Session"
+    private const val MAX_RECONNECT_ATTEMPTS = 5
+    private val RECONNECT_DELAYS_MS = longArrayOf(2000L, 4000L, 8000L, 15000L, 30000L)
 
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val sessions = ConcurrentHashMap<String, RfcommTransport>()
+    private val knownDevices = ConcurrentHashMap<String, BluetoothDevice>()
+    private val reconnectAttempts = ConcurrentHashMap<String, Int>()
+    private val pendingReconnects = ConcurrentHashMap<String, Runnable>()
     private val _activeDevices = MutableStateFlow<Map<String, ActiveDeviceSessionState>>(emptyMap())
     val activeDevices: StateFlow<Map<String, ActiveDeviceSessionState>> = _activeDevices.asStateFlow()
 
@@ -38,6 +46,7 @@ object OriginDeviceSessionManager {
     @SuppressLint("MissingPermission")
     fun onDeviceConnected(device: BluetoothDevice) {
         val address = device.address ?: return
+        pendingReconnects.remove(address)?.let { mainHandler.removeCallbacks(it) }
         val existing = sessions[address]
         if (existing != null && existing.isRunning) return
         existing?.stop()
@@ -53,10 +62,13 @@ object OriginDeviceSessionManager {
         )
         val adapter = EarbudAdapterRegistry.resolve(identity, disabledAdapterIds) ?: return
         Log.i(TAG, "matched ${identity.deviceName} ($address) -> ${adapter.id}")
+        knownDevices[address] = device
 
-        _activeDevices.value = _activeDevices.value + (
-            address to ActiveDeviceSessionState(identity = identity, adapter = adapter)
-        )
+        val existingState = _activeDevices.value[address]
+        val initialState = existingState?.copy(identity = identity, adapter = adapter)
+            ?: ActiveDeviceSessionState(identity = identity, adapter = adapter)
+        _activeDevices.value = _activeDevices.value + (address to initialState)
+        onSessionUpdated?.invoke(address, initialState)
 
         val session = adapter.createProtocolSession() ?: return
         val endpoint = adapter.transports.firstOrNull {
@@ -68,13 +80,39 @@ object OriginDeviceSessionManager {
             endpoint = endpoint,
             session = session,
             onEvents = { events -> handleEvents(address, events) },
+            onClosed = { scheduleReconnectIfActive(address) },
         )
         sessions[address] = transport
         transport.start()
     }
 
+    private fun scheduleReconnectIfActive(address: String) {
+        if (!_activeDevices.value.containsKey(address)) return
+        val device = knownDevices[address] ?: return
+        val attempt = reconnectAttempts[address] ?: 0
+        if (attempt >= MAX_RECONNECT_ATTEMPTS) {
+            Log.w(TAG, "RFCOMM reconnect exhausted ($attempt attempts) for $address")
+            return
+        }
+        if (pendingReconnects.containsKey(address)) return
+        reconnectAttempts[address] = attempt + 1
+        val delayMs = RECONNECT_DELAYS_MS[attempt.coerceAtMost(RECONNECT_DELAYS_MS.lastIndex)]
+        Log.i(TAG, "scheduling RFCOMM reconnect #${attempt + 1} for $address in ${delayMs}ms")
+        val task = Runnable {
+            pendingReconnects.remove(address)
+            if (_activeDevices.value.containsKey(address)) {
+                onDeviceConnected(device)
+            }
+        }
+        pendingReconnects[address] = task
+        mainHandler.postDelayed(task, delayMs)
+    }
+
     fun onDeviceDisconnected(address: String?) {
         if (address.isNullOrBlank()) return
+        pendingReconnects.remove(address)?.let { mainHandler.removeCallbacks(it) }
+        reconnectAttempts.remove(address)
+        knownDevices.remove(address)
         sessions.remove(address)?.stop()
         _activeDevices.value = _activeDevices.value - address
     }
@@ -109,6 +147,7 @@ object OriginDeviceSessionManager {
         events.forEach { event ->
             when (event) {
                 ProtocolEvent.HandshakeAccepted -> {
+                    reconnectAttempts.remove(address)
                     updated = updated.copy(handshakeAccepted = true)
                 }
                 ProtocolEvent.HandshakeRejected -> {
@@ -121,6 +160,7 @@ object OriginDeviceSessionManager {
                     }
                 }
                 is ProtocolEvent.FeatureStateChanged -> {
+                    reconnectAttempts.remove(address)
                     updated = updated.copy(snapshot = updated.snapshot.update(event.state))
                 }
                 is ProtocolEvent.UnknownFrame -> Unit
