@@ -103,6 +103,15 @@ object MultiBrandModelCatalog {
         ThirdPartyModelSpec("水月雨", "others", "MOONDROP 太空漫游 Space Travel", MoondropEarbudAdapter.ID, true),
         ThirdPartyModelSpec("水月雨", "others", "MOONDROP 梦回 Golden Ages", MoondropEarbudAdapter.ID, true),
         ThirdPartyModelSpec("水月雨", "others", "MOONDROP 梦想碟 Pudding", MoondropEarbudAdapter.ID, true),
+        ThirdPartyModelSpec("水月雨", "others", "MOONDROP MIRAGE", MoondropMirageAdapter.ID, true),
+        ThirdPartyModelSpec("水月雨", "others", "MOONDROP PILL", MoondropPillAdapter.ID, false),
+        ThirdPartyModelSpec("水月雨", "others", "ZZZ-ANGELS-OWS", MoondropZzzAngelsAdapter.ID, false),
+
+        // NiceHCK / 原道
+        ThirdPartyModelSpec("原道", "others", "NiceHCK Origin", NiceHckYuanDaoOrigAdapter.ID, true),
+
+        // StarRing
+        ThirdPartyModelSpec("StarRing", "others", "StarRing Ultra", StarRingUltraAdapter.ID, true),
 
         // QCY
         ThirdPartyModelSpec("QCY", "others", "QCY MeloBuds ANC (HT05)", QcyEarbudAdapter.ID, true),

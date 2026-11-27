@@ -119,6 +119,16 @@ object ControlAppCatalog {
         displayName = "Bose Connect",
     )
 
+    val yuanDao = ControlAppSpec(
+        packageName = "com.yuandao.nicehck",
+        displayName = "原道 / NiceHCK",
+    )
+
+    val lightYear = ControlAppSpec(
+        packageName = "cn.lightyeartech.android",
+        displayName = "LightYear",
+    )
+
     val all: List<ControlAppSpec> = listOf(
         heyMelody,
         oplusWirelessEarphones,
@@ -143,5 +153,7 @@ object ControlAppCatalog {
         bose,
         boseChina,
         boseConnect,
+        yuanDao,
+        lightYear,
     )
 }

@@ -3,7 +3,7 @@
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/Syuuieo/OriginPods)](https://github.com/Syuuieo/OriginPods/releases/latest)
 
-OriginPods 是面向 **vivo OriginOS（支持 OriginOS 6 / OriginOS 7）** 的第三方蓝牙耳机系统集成模块。它让受支持的 **OPPO Enco / OnePlus Buds / realme Buds** 以及 **小米/Redmi、华为/荣耀、Sony、三星、Bose、漫步者、水月雨、QCY、弱水时砂、Technics** 等多品牌耳机原生接入 OriginOS **连接中心（ConnectCenter）卡片**、**系统蓝牙设置**与 **VivoTws 原生耳机详情页**，并在不接管 Android 音频路由的前提下补全左/右耳与充电盒电量、降噪模式切换、播放声音查找等系统级体验。
+OriginPods 是面向 **vivo OriginOS（支持 OriginOS 6 / OriginOS 7）** 的第三方蓝牙耳机系统集成模块。它让受支持的 **OPPO Enco / OnePlus Buds / realme Buds** 以及 **小米/Redmi、华为/荣耀、Sony、三星、Bose、漫步者、水月雨、NiceHCK/原道、StarRing、QCY、弱水时砂、Technics** 等多品牌耳机原生接入 OriginOS **连接中心（ConnectCenter）卡片**、**系统蓝牙设置**与 **VivoTws 原生耳机详情页**，并在不接管 Android 音频路由的前提下补全左/右耳与充电盒电量、降噪模式切换、播放声音查找等系统级体验。
 
 > [!WARNING]
 > OriginPods 依赖 Root、LSPosed 与 OriginOS 系统私有接口。安装前请确认具备系统恢复手段；系统大版本更新可能会暂时影响 Hook 兼容性。本项目与 vivo、iQOO、OPPO、OnePlus、realme、Xiaomi、Huawei 等相关品牌无关。
@@ -42,7 +42,7 @@ OriginPods 是面向 **vivo OriginOS（支持 OriginOS 6 / OriginOS 7）** 的�
 | 小米 / Redmi Buds 系列 | RCSP (`FE DC BA ... EF`) / RFCOMM | 左耳、右耳、充电盒 | 降噪、通透、关闭（参考 `MiBudsClient`） |
 | 华为 FreeBuds / 荣耀 Earbuds | SPP 私有协议 | 左耳、右耳、充电盒 | 降噪、通透、关闭（部分型号支持） |
 | Sony (WF / WH / LinkBuds) | Sony V1/V2 RFCOMM | 左耳、右耳、充电盒 | 降噪、环境声、关闭 |
-| 三星 / Bose / 漫步者 / 水月雨 / QCY / 弱水时砂 / Technics | 各品牌 SPP 私有协议 | 左耳、右耳、充电盒 | 降噪、通透、关闭（依具体型号能力） |
+| 三星 / Bose / 漫步者 / 水月雨 / 原道 / StarRing / QCY / 弱水时砂 / Technics | 各品牌 SPP / RFCOMM 私有协议 | 左耳、右耳、充电盒 | 降噪、通透、抗风噪、关闭（依具体型号能力） |
 
 > 注：Apple AirPods 因系统已原生适配，模块不再重复接管。
 

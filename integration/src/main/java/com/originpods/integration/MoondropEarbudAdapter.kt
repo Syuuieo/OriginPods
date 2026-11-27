@@ -4,7 +4,7 @@ import com.originpods.protocol.moondrop.MoondropPuddingWireCodec
 import com.originpods.protocol.moondrop.MoondropRobinWireCodec
 import com.originpods.protocol.moondrop.MoondropZzzAngelsWireCodec
 
-class MoondropEarbudAdapter : StandardEarbudAdapter() {
+open class MoondropEarbudAdapter : StandardEarbudAdapter() {
     override val id: String = ID
     override val displayName: String = "水月雨 MOONDROP 系列"
     override val resolution: AdapterResolution = AdapterResolution.FAMILY_MATCH
